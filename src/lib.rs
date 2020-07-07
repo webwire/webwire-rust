@@ -18,6 +18,9 @@ pub enum ConsumerError {
     SerializerError(serde_json::Error),
     DeserializerError(serde_json::Error),
     ProviderError(ProviderError), // FIXME
+    /// The request was sent to multiple recipients therefore fetching a
+    /// result is not supported.
+    Broadcast,
     /// The remote side disconnected while waiting for a response
     Disconnected,
 }
