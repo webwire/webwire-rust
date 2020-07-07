@@ -70,7 +70,13 @@ pub enum ErrorKind<'a> {
     Other(&'a [u8]),
 }
 
-pub fn parse_message(input: &[u8]) -> IResult<&[u8], Message> {
+impl<'a> Message<'a> {
+    pub fn parse(input: &'a [u8]) -> Option<Self> {
+        parse_message(input).ok().map(|t| t.1)
+    }
+}
+
+fn parse_message(input: &[u8]) -> IResult<&[u8], Message> {
     alt((
         map(parse_heartbeat, Message::Heartbeat),
         map(parse_notification, Message::Notification),
@@ -197,170 +203,134 @@ fn parse_rest(input: &[u8]) -> IResult<&[u8], &[u8]> {
 #[test]
 fn test_parse_heartbeat() {
     assert_eq!(
-        parse_message(b"0 42"),
-        Ok((
-            "".as_bytes(),
-            Message::Heartbeat(Heartbeat {
-                last_message_id: 42
-            })
-        ))
+        Message::parse(b"0 42"),
+        Some(Message::Heartbeat(Heartbeat {
+            last_message_id: 42
+        }))
     );
 }
 
 #[test]
 fn test_parse_notification() {
     assert_eq!(
-        parse_message(b"1 43 hello world"),
-        Ok((
-            "".as_bytes(),
-            Message::Notification(Notification {
-                message_id: 43,
-                method_name: "hello",
-                data: Some(b"world"),
-            })
-        ))
+        Message::parse(b"1 43 hello world"),
+        Some(Message::Notification(Notification {
+            message_id: 43,
+            method_name: "hello",
+            data: Some(b"world"),
+        }))
     );
 }
 
 #[test]
 fn test_parse_notification_no_data() {
     assert_eq!(
-        parse_message(b"1 44 ping"),
-        Ok((
-            "".as_bytes(),
-            Message::Notification(Notification {
-                message_id: 44,
-                method_name: "ping",
-                data: None,
-            })
-        ))
+        Message::parse(b"1 44 ping"),
+        Some(Message::Notification(Notification {
+            message_id: 44,
+            method_name: "ping",
+            data: None,
+        }))
     );
 }
 
 #[test]
 fn test_parse_request() {
     assert_eq!(
-        parse_message(b"2 45 add [4, 5]"),
-        Ok((
-            "".as_bytes(),
-            Message::Request(Request {
-                message_id: 45,
-                method_name: "add",
-                data: Some(b"[4, 5]"),
-            })
-        ))
+        Message::parse(b"2 45 add [4, 5]"),
+        Some(Message::Request(Request {
+            message_id: 45,
+            method_name: "add",
+            data: Some(b"[4, 5]"),
+        }))
     );
 }
 
 #[test]
 fn test_parse_request_no_data() {
     assert_eq!(
-        parse_message(b"2 46 get_time"),
-        Ok((
-            "".as_bytes(),
-            Message::Request(Request {
-                message_id: 46,
-                method_name: "get_time",
-                data: None,
-            })
-        ))
+        Message::parse(b"2 46 get_time"),
+        Some(Message::Request(Request {
+            message_id: 46,
+            method_name: "get_time",
+            data: None,
+        }))
     );
 }
 
 #[test]
 fn test_parse_response() {
     assert_eq!(
-        parse_message(b"3 47 45 9"),
-        Ok((
-            "".as_bytes(),
-            Message::Response(Response {
-                message_id: 47,
-                request_message_id: 45,
-                data: Some(b"9"),
-            })
-        ))
+        Message::parse(b"3 47 45 9"),
+        Some(Message::Response(Response {
+            message_id: 47,
+            request_message_id: 45,
+            data: Some(b"9"),
+        }))
     );
 }
 
 #[test]
 fn test_parse_response_no_data() {
     assert_eq!(
-        parse_message(b"3 48 46"),
-        Ok((
-            "".as_bytes(),
-            Message::Response(Response {
-                message_id: 48,
-                request_message_id: 46,
-                data: None,
-            })
-        ))
+        Message::parse(b"3 48 46"),
+        Some(Message::Response(Response {
+            message_id: 48,
+            request_message_id: 46,
+            data: None,
+        }))
     );
 }
 
 #[test]
 fn test_parse_error_provider_error() {
     assert_eq!(
-        parse_message(b"4 48 46"),
-        Ok((
-            "".as_bytes(),
-            Message::Error(Error {
-                message_id: 48,
-                request_message_id: 46,
-                kind: ErrorKind::ProviderError,
-            })
-        ))
+        Message::parse(b"4 48 46"),
+        Some(Message::Error(Error {
+            message_id: 48,
+            request_message_id: 46,
+            kind: ErrorKind::ProviderError,
+        }))
     );
 }
 
 #[test]
 fn test_parse_error_service_not_found() {
     assert_eq!(
-        parse_message(b"4 48 46 ServiceNotFound"),
-        Ok((
-            "".as_bytes(),
-            Message::Error(Error {
-                message_id: 48,
-                request_message_id: 46,
-                kind: ErrorKind::ServiceNotFound,
-            })
-        ))
+        Message::parse(b"4 48 46 ServiceNotFound"),
+        Some(Message::Error(Error {
+            message_id: 48,
+            request_message_id: 46,
+            kind: ErrorKind::ServiceNotFound,
+        }))
     );
 }
 
 #[test]
 fn test_parse_error_method_not_found() {
     assert_eq!(
-        parse_message(b"4 48 46 MethodNotFound"),
-        Ok((
-            "".as_bytes(),
-            Message::Error(Error {
-                message_id: 48,
-                request_message_id: 46,
-                kind: ErrorKind::MethodNotFound,
-            })
-        ))
+        Message::parse(b"4 48 46 MethodNotFound"),
+        Some(Message::Error(Error {
+            message_id: 48,
+            request_message_id: 46,
+            kind: ErrorKind::MethodNotFound,
+        }))
     );
 }
 
 #[test]
 fn test_parse_error_other() {
     assert_eq!(
-        parse_message(b"4 48 46 I'm a teapot!"),
-        Ok((
-            "".as_bytes(),
-            Message::Error(Error {
-                message_id: 48,
-                request_message_id: 46,
-                kind: ErrorKind::Other(b"I'm a teapot!"),
-            })
-        ))
+        Message::parse(b"4 48 46 I'm a teapot!"),
+        Some(Message::Error(Error {
+            message_id: 48,
+            request_message_id: 46,
+            kind: ErrorKind::Other(b"I'm a teapot!"),
+        }))
     );
 }
 
 #[test]
 fn test_parse_disconnect() {
-    assert_eq!(
-        parse_message(b"-1"),
-        Ok(("".as_bytes(), Message::Disconnect))
-    );
+    assert_eq!(Message::parse(b"-1"), Some(Message::Disconnect));
 }
