@@ -1,15 +1,14 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use tokio::sync::oneshot;
-use tokio::sync::Mutex;
 
 use super::message::{self, Message};
 use crate::{Consumer, ConsumerError, Server};
@@ -20,7 +19,9 @@ struct IdGenerator {
 
 impl IdGenerator {
     fn new() -> Self {
-        Self { last_id: AtomicU64::new(0) }
+        Self {
+            last_id: AtomicU64::new(0),
+        }
     }
     fn next(&self) -> u64 {
         self.last_id.fetch_add(1, Ordering::Relaxed) + 1
@@ -76,12 +77,10 @@ impl Engine {
                 id_generator: IdGenerator::new(),
                 requests: DashMap::new(),
                 transport: Box::new(transport),
-            })
+            }),
         };
         let engine_clone = engine.clone();
-        tokio::spawn(async move {
-            engine_clone.run().await
-        });
+        tokio::spawn(async move { engine_clone.run().await });
         engine
     }
     async fn run(&self) {
@@ -185,62 +184,77 @@ impl Drop for EngineInner {
     }
 }
 
-#[tokio::main]
-#[test]
-async fn test_response_err_broadcast() {
-    use tokio::sync::oneshot;
-    let (_tx, rx) = oneshot::channel();
-    let response: Response = Response {
-        is_broadcast: true,
-        result_rx: rx,
-    };
-    assert!(matches!(response.await, Err(ConsumerError::Broadcast)));
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::Mutex;
 
-#[tokio::main]
-#[test]
-async fn test_response_err_disconnected() {
-    use tokio::sync::oneshot;
-    let (tx, rx) = oneshot::channel();
-    drop(tx);
-    let response: Response = Response {
-        is_broadcast: false,
-        result_rx: rx,
-    };
-    assert!(matches!(response.await, Err(ConsumerError::Disconnected)));
-}
-
-struct BidiChannel {
-    tx: tokio::sync::mpsc::UnboundedSender<Bytes>,
-    rx: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Bytes>>,
-}
-
-fn bidi_channel() -> (BidiChannel, BidiChannel) {
-    let (tx0, rx0) = tokio::sync::mpsc::unbounded_channel();
-    let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel();
-    (
-        BidiChannel { tx: tx0, rx: Mutex::new(rx1) },
-        BidiChannel { tx: tx1, rx: Mutex::new(rx0) },
-    )
-}
-
-#[async_trait]
-impl Transport for BidiChannel {
-    fn send(&self, frame: Bytes) {
-        self.tx.send(frame).unwrap();
+    #[tokio::main]
+    #[test]
+    async fn test_response_err_broadcast() {
+        use tokio::sync::oneshot;
+        let (_tx, rx) = oneshot::channel();
+        let response: Response = Response {
+            is_broadcast: true,
+            result_rx: rx,
+        };
+        assert!(matches!(response.await, Err(ConsumerError::Broadcast)));
     }
-    async fn recv(&self) -> Option<Bytes> {
-        self.rx.lock().await.recv().await
-    }
-}
 
-#[tokio::main]
-#[test]
-async fn test_engine_response() {
-    let (transport, mut remote) = bidi_channel();
-    let mut engine = Engine::new(transport);
-    let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
-    assert_eq!(remote.recv().await.unwrap(), Bytes::copy_from_slice(b"2 1 get_answer"));
-    remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
-    assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
+    #[tokio::main]
+    #[test]
+    async fn response_err_disconnected() {
+        use tokio::sync::oneshot;
+        let (tx, rx) = oneshot::channel();
+        drop(tx);
+        let response: Response = Response {
+            is_broadcast: false,
+            result_rx: rx,
+        };
+        assert!(matches!(response.await, Err(ConsumerError::Disconnected)));
+    }
+
+    struct BidiChannel {
+        tx: tokio::sync::mpsc::UnboundedSender<Bytes>,
+        rx: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Bytes>>,
+    }
+
+    fn bidi_channel() -> (BidiChannel, BidiChannel) {
+        let (tx0, rx0) = tokio::sync::mpsc::unbounded_channel();
+        let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel();
+        (
+            BidiChannel {
+                tx: tx0,
+                rx: Mutex::new(rx1),
+            },
+            BidiChannel {
+                tx: tx1,
+                rx: Mutex::new(rx0),
+            },
+        )
+    }
+
+    #[async_trait]
+    impl Transport for BidiChannel {
+        fn send(&self, frame: Bytes) {
+            self.tx.send(frame).unwrap();
+        }
+        async fn recv(&self) -> Option<Bytes> {
+            self.rx.lock().await.recv().await
+        }
+    }
+
+    #[tokio::main]
+    #[test]
+    async fn engine_response() {
+        let (transport, mut remote) = bidi_channel();
+        let mut engine = Engine::new(transport);
+        let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
+        assert_eq!(
+            remote.recv().await.unwrap(),
+            Bytes::copy_from_slice(b"2 1 get_answer")
+        );
+        remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
+        assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
+    }
 }
