@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use dashmap::DashMap;
 
 pub mod rpc;
@@ -17,20 +18,18 @@ pub enum ProviderError {
 
 #[derive(Debug)]
 pub enum ConsumerError {
+    ServiceNotFound,
+    MethodNotFound,
     SerializerError(serde_json::Error),
     DeserializerError(serde_json::Error),
-    ProviderError(ProviderError), // FIXME
+    ProviderError,
+    /// The data part of the message could not be understood.
+    InvalidData(Bytes),
     /// The request was sent to multiple recipients therefore fetching a
     /// result is not supported.
     Broadcast,
     /// The remote side disconnected while waiting for a response
     Disconnected,
-}
-
-impl From<ProviderError> for ConsumerError {
-    fn from(e: ProviderError) -> Self {
-        Self::ProviderError(e)
-    }
 }
 
 pub struct Request {

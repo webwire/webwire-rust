@@ -29,35 +29,35 @@ pub enum Message<'a> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Heartbeat {
-    last_message_id: u64,
+    pub last_message_id: u64,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Notification<'a> {
-    message_id: u64,
-    method_name: &'a str,
-    data: Option<&'a [u8]>,
+    pub message_id: u64,
+    pub method_name: &'a str,
+    pub data: Option<&'a [u8]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Request<'a> {
-    message_id: u64,
-    method_name: &'a str,
-    data: Option<&'a [u8]>,
+    pub message_id: u64,
+    pub method_name: &'a str,
+    pub data: Option<&'a [u8]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Response<'a> {
-    message_id: u64,
-    request_message_id: u64,
-    data: Option<&'a [u8]>,
+    pub message_id: u64,
+    pub request_message_id: u64,
+    pub data: Option<&'a [u8]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Error<'a> {
-    message_id: u64,
-    request_message_id: u64,
-    kind: ErrorKind<'a>,
+    pub message_id: u64,
+    pub request_message_id: u64,
+    pub kind: ErrorKind<'a>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
