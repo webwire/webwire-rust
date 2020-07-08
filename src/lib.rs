@@ -45,6 +45,19 @@ pub struct ServerConnection {
     // FIXME
 }
 
+impl ProviderError {
+    fn to_vec(&self) -> Vec<u8> {
+        match self {
+            Self::ServiceNotFound => "ServiceNotFound",
+            Self::MethodNotFound => "MethodNotFound",
+            // FIXME This should probably be a in internal server error instead?
+            Self::SerializerError(_) => "SerializerError",
+            Self::DeserializerError(_) => "DeserializerError",
+            Self::InternalError(_) => "InternalError",
+        }.into()
+    }
+}
+
 #[async_trait]
 impl Consumer for ServerConnection {
     async fn call(&self, input: &Request) -> Result<Vec<u8>, ConsumerError> {
@@ -79,6 +92,23 @@ impl Server {
     }
     pub fn connections(&self) -> std::slice::Iter<ServerConnection> {
         self.inner.connections.iter()
+    }
+    pub async fn call(&self, method: &str, data: Bytes) -> Result<Vec<u8>, ProviderError> {
+        // FIXME add namespace/service support
+        let parts = method.split(".").collect::<Vec<_>>();
+        if parts.len() != 2 {
+            // FIXME actually we should return some kind of InvalidRequest showing that the
+            // method name is malformed
+            return Err(ProviderError::ServiceNotFound);
+        }
+        let service_name: &str = parts.get(0).unwrap();
+        let method_name: &str = parts.get(1).unwrap();
+        let provider = self.inner.providers.get(service_name).ok_or(ProviderError::ServiceNotFound)?;
+        provider.call(&Request {
+            service: service_name.to_owned(),
+            method: method_name.to_owned(),
+            data: data.to_vec(),
+        }).await
     }
 }
 

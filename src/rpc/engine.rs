@@ -11,7 +11,7 @@ use dashmap::DashMap;
 use tokio::sync::oneshot;
 
 use super::message::{self, Message};
-use crate::{Consumer, ConsumerError, Server};
+use crate::{Consumer, ConsumerError, ProviderError, Server};
 
 struct IdGenerator {
     last_id: AtomicU64,
@@ -65,18 +65,27 @@ pub struct Engine {
 }
 
 pub struct EngineInner {
+    server: Server,
+    transport: Box<dyn Transport + Sync + Send>,
     id_generator: IdGenerator,
     requests: DashMap<u64, oneshot::Sender<Result<Bytes, ConsumerError>>>,
-    transport: Box<dyn Transport + Sync + Send>,
+}
+
+fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
+    match slice {
+        Some(slice) => bytes.slice((slice.as_ptr() as usize - bytes.as_ptr() as usize)..),
+        None => Bytes::new(),
+    }
 }
 
 impl Engine {
-    pub fn new<T: Transport + Sync + Send + 'static>(transport: T) -> Self {
+    pub fn new<T: Transport + Sync + Send + 'static>(server: Server, transport: T) -> Self {
         let engine = Self {
             inner: Arc::new(EngineInner {
+                server,
+                transport: Box::new(transport),
                 id_generator: IdGenerator::new(),
                 requests: DashMap::new(),
-                transport: Box::new(transport),
             }),
         };
         let engine_clone = engine.clone();
@@ -129,22 +138,23 @@ impl Engine {
                 // XXX ignore heartbeats for now until reliable messaging is implemented
             }
             Message::Notification(notification) => {
-                // FIXME implement
-                //self.provider
-                //self.handle_notification(notification)?;
+                self.handle_request(
+                    None,
+                    notification.method_name,
+                    _get_data(&data, notification.data),
+                );
             }
             Message::Request(request) => {
-                // FIXME implement
+                self.handle_request(
+                    None,
+                    request.method_name,
+                    _get_data(&data, request.data),
+                );
             }
             Message::Response(response) => {
                 self.handle_response(
                     response.request_message_id,
-                    Ok(match response.data {
-                        Some(response_data) => {
-                            data.slice((response_data.as_ptr() as usize - data.as_ptr() as usize)..)
-                        }
-                        None => Bytes::new(),
-                    }),
+                    Ok(_get_data(&data, response.data)),
                 );
             }
             Message::Error(error) => {
@@ -164,11 +174,51 @@ impl Engine {
         }
         Some(())
     }
+    /// This function is used to handle both notifications and requests
+    fn handle_request(&self, message_id: Option<u64>, method: &str, data: Bytes) {
+        // FIXME add some kind of rate limiting and/or max concurrent requests
+        // setting. Otherwise this could easily used for a denial of service
+        // attack.
+        let engine = self.clone();
+        let method = method.to_owned();
+        tokio::spawn(async move {
+            match (engine.inner.server.call(&method, data).await, message_id) {
+                (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
+                (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
+                (_, _) => {}
+            }
+        });
+    }
+    /// This function is used to send both normal responses and error responses
+    fn send_response(&self, request_message_id: u64, data: Result<Vec<u8>, ProviderError>) {
+        // FIXME this is almost the same code as when sending notifications and requests
+        let message_id = self.inner.id_generator.next();
+        let header = match data {
+            Ok(_) => format!("3 {} {}", message_id, request_message_id),
+            Err(_) => format!("4 {} {}", message_id, request_message_id),
+        };
+        let data = match data {
+            Ok(data) => data,
+            Err(err) => err.to_vec(),
+        };
+        let capacity = header.len() + 1 + data.len();
+        let mut buf = BytesMut::with_capacity(capacity);
+        buf.put(header.as_bytes());
+        if !data.is_empty() {
+            buf.put_slice(b" ");
+            buf.put_slice(&data);
+        }
+        self.inner.transport.send(buf.into());
+    }
     /// This function is used to handle both normal responses and error responses
     fn handle_response(&self, request_message_id: u64, response: Result<Bytes, ConsumerError>) {
         match self.inner.requests.remove(&request_message_id) {
             Some((_, tx)) => {
-                tx.send(response);
+                // If the caller is no longer interrested in the response
+                // it can drop the `Response` object which causes this channel
+                // to be closed. This is to be expected and therefore a failing
+                // send is simply ignored.
+                let _ = tx.send(response);
             }
             None => {
                 // FIXME log missing request id
@@ -247,8 +297,9 @@ mod tests {
     #[tokio::main]
     #[test]
     async fn engine_response() {
-        let (transport, mut remote) = bidi_channel();
-        let mut engine = Engine::new(transport);
+        let server = Server::new();
+        let (transport, remote) = bidi_channel();
+        let mut engine = Engine::new(server, transport);
         let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
         assert_eq!(
             remote.recv().await.unwrap(),
