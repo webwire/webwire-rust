@@ -1,43 +1,21 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
+use futures::future::{AbortHandle, Abortable};
+use futures::stream::{SplitSink, SplitStream};
+use futures::{SinkExt, StreamExt};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 
+use crate::{ConsumerError, ProviderError, Server};
+
 use super::message::{self, Message};
-use crate::{Consumer, ConsumerError, ProviderError, Server};
-
-struct IdGenerator {
-    last_id: AtomicU64,
-}
-
-impl IdGenerator {
-    fn new() -> Self {
-        Self {
-            last_id: AtomicU64::new(0),
-        }
-    }
-    fn next(&self) -> u64 {
-        self.last_id.fetch_add(1, Ordering::Relaxed) + 1
-    }
-}
-
-#[async_trait]
-pub trait Transport {
-    fn send(&self, data: Bytes);
-    async fn recv(&self) -> Option<Bytes>;
-}
-
-pub struct Request {
-    result_tx: oneshot::Sender<Bytes>,
-    consumer: Consumer,
-}
+use super::transport::Transport;
 
 pub struct Response {
     is_broadcast: bool,
@@ -66,9 +44,11 @@ pub struct Engine {
 
 pub struct EngineInner {
     server: Server,
-    transport: Box<dyn Transport + Sync + Send>,
-    id_generator: IdGenerator,
+    abort_sender: AbortHandle,
+    abort_receiver: AbortHandle,
+    last_message_id: AtomicU64,
     requests: DashMap<u64, oneshot::Sender<Result<Bytes, ConsumerError>>>,
+    tx: UnboundedSender<Bytes>,
 }
 
 fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
@@ -79,27 +59,63 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 }
 
 impl Engine {
-    pub fn new<T: Transport + Sync + Send + 'static>(server: Server, transport: T) -> Self {
+    pub fn new<T: Transport + Send + 'static>(server: Server, transport: T) -> Self {
+        let (sink, stream) = transport.split();
+        let (abort_sender, abort_sender_reg) = AbortHandle::new_pair();
+        let (abort_receiver, abort_receiver_reg) = AbortHandle::new_pair();
+        let (sender_tx, sender_rx) = unbounded_channel::<Bytes>();
         let engine = Self {
             inner: Arc::new(EngineInner {
                 server,
-                transport: Box::new(transport),
-                id_generator: IdGenerator::new(),
+                abort_sender,
+                abort_receiver,
+                last_message_id: AtomicU64::new(0),
                 requests: DashMap::new(),
+                tx: sender_tx,
             }),
         };
-        let engine_clone = engine.clone();
-        tokio::spawn(async move { engine_clone.run().await });
+        tokio::spawn(Abortable::new(
+            engine.clone().receiver(stream),
+            abort_receiver_reg,
+        ));
+        tokio::spawn(Abortable::new(
+            engine.clone().sender(sink, sender_rx),
+            abort_sender_reg,
+        ));
         engine
     }
-    async fn run(&self) {
-        while let Some(frame) = self.inner.transport.recv().await {
-            self.handle_frame(frame);
+
+    async fn receiver<T: Transport>(self, mut stream: SplitStream<T>) {
+        while let Some(frame) = stream.next().await {
+            // FIXME what does it mean when an error shows up here?
+            self.handle_frame(frame.unwrap());
         }
-        // FIXME connection was lost... what now?
     }
+
+    async fn sender<T: Transport>(
+        self,
+        mut sink: SplitSink<T, Bytes>,
+        mut rx: UnboundedReceiver<Bytes>,
+    ) {
+        while let Some(frame) = rx.recv().await {
+            sink.send(frame).await.unwrap();
+        }
+    }
+
+    fn send(&self, frame: Bytes) {
+        // If sending fails this means that the sender task has stopped and
+        // thus dropped the receiving end of the channel. This is expected
+        // behavior when the engine and transport are being terminated and
+        // there are still some requests being processed.
+        let _ = self.inner.tx.send(frame);
+    }
+
+    fn next_message_id(&self) -> u64 {
+        self.inner.last_message_id.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
     pub fn notify(&mut self, method_name: &str, data: Bytes) {
-        let message_id = self.inner.id_generator.next();
+        let message_id = self.next_message_id();
         let header = format!("1 {} {}", message_id, method_name);
         let capacity = header.len() + 1 + data.len();
         let mut buf = BytesMut::with_capacity(capacity);
@@ -108,12 +124,12 @@ impl Engine {
             buf.put_slice(b" ");
             buf.put(data);
         }
-        self.inner.transport.send(buf.into());
+        self.send(buf.into());
     }
     pub fn request(&mut self, method_name: &str, data: Bytes) -> Response {
         // FIXME except for the message type this is the exactly the same code
         // as notify.
-        let message_id = self.inner.id_generator.next();
+        let message_id = self.next_message_id();
         let header = format!("2 {} {}", message_id, method_name);
         let capacity = header.len() + 1 + data.len();
         let mut buf = BytesMut::with_capacity(capacity);
@@ -125,7 +141,7 @@ impl Engine {
         // prepare back channel
         let (tx, rx) = oneshot::channel();
         self.inner.requests.insert(message_id, tx);
-        self.inner.transport.send(buf.into());
+        self.send(buf.into());
         Response {
             is_broadcast: false,
             result_rx: rx,
@@ -145,11 +161,7 @@ impl Engine {
                 );
             }
             Message::Request(request) => {
-                self.handle_request(
-                    None,
-                    request.method_name,
-                    _get_data(&data, request.data),
-                );
+                self.handle_request(None, request.method_name, _get_data(&data, request.data));
             }
             Message::Response(response) => {
                 self.handle_response(
@@ -192,7 +204,7 @@ impl Engine {
     /// This function is used to send both normal responses and error responses
     fn send_response(&self, request_message_id: u64, data: Result<Vec<u8>, ProviderError>) {
         // FIXME this is almost the same code as when sending notifications and requests
-        let message_id = self.inner.id_generator.next();
+        let message_id = self.next_message_id();
         let header = match data {
             Ok(_) => format!("3 {} {}", message_id, request_message_id),
             Err(_) => format!("4 {} {}", message_id, request_message_id),
@@ -208,7 +220,7 @@ impl Engine {
             buf.put_slice(b" ");
             buf.put_slice(&data);
         }
-        self.inner.transport.send(buf.into());
+        self.send(buf.into());
     }
     /// This function is used to handle both normal responses and error responses
     fn handle_response(&self, request_message_id: u64, response: Result<Bytes, ConsumerError>) {
@@ -230,6 +242,8 @@ impl Engine {
 impl Drop for EngineInner {
     fn drop(&mut self) {
         // Clear requests HashMap causing all channels to be closed.
+        self.abort_receiver.abort();
+        self.abort_sender.abort();
         self.requests.clear();
     }
 }
@@ -237,7 +251,9 @@ impl Drop for EngineInner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::Mutex;
+    use crate::rpc::transport::TransportError;
+    use futures::{Sink, Stream};
+    use std::task::Context;
 
     #[tokio::main]
     #[test]
@@ -264,41 +280,11 @@ mod tests {
         assert!(matches!(response.await, Err(ConsumerError::Disconnected)));
     }
 
-    struct BidiChannel {
-        tx: tokio::sync::mpsc::UnboundedSender<Bytes>,
-        rx: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Bytes>>,
-    }
-
-    fn bidi_channel() -> (BidiChannel, BidiChannel) {
-        let (tx0, rx0) = tokio::sync::mpsc::unbounded_channel();
-        let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel();
-        (
-            BidiChannel {
-                tx: tx0,
-                rx: Mutex::new(rx1),
-            },
-            BidiChannel {
-                tx: tx1,
-                rx: Mutex::new(rx0),
-            },
-        )
-    }
-
-    #[async_trait]
-    impl Transport for BidiChannel {
-        fn send(&self, frame: Bytes) {
-            self.tx.send(frame).unwrap();
-        }
-        async fn recv(&self) -> Option<Bytes> {
-            self.rx.lock().await.recv().await
-        }
-    }
-
     #[tokio::main]
     #[test]
     async fn engine_response() {
         let server = Server::new();
-        let (transport, remote) = bidi_channel();
+        let (transport, mut remote) = bidi_channel();
         let mut engine = Engine::new(server, transport);
         let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
         assert_eq!(
@@ -307,5 +293,63 @@ mod tests {
         );
         remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
         assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
+    }
+
+    struct FakeTransport {
+        tx: tokio::sync::mpsc::UnboundedSender<Bytes>,
+        rx: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    }
+
+    impl Transport for FakeTransport {}
+
+    impl Stream for FakeTransport {
+        type Item = Result<Bytes, TransportError>;
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+            match Pin::new(&mut self.get_mut().rx).poll_recv(cx) {
+                Poll::Ready(Some(m)) => Poll::Ready(Some(Ok(m))),
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
+
+    impl Sink<Bytes> for FakeTransport {
+        type Error = TransportError;
+        fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn start_send(self: Pin<&mut Self>, item: Bytes) -> Result<(), Self::Error> {
+            self.get_mut().tx.send(item).unwrap();
+            Ok(())
+        }
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    struct Remote {
+        tx: tokio::sync::mpsc::UnboundedSender<Bytes>,
+        rx: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+    }
+
+    impl Remote {
+        fn send(&self, frame: Bytes) {
+            self.tx.send(frame).unwrap();
+        }
+        async fn recv(&mut self) -> Option<Bytes> {
+            self.rx.recv().await
+        }
+    }
+
+    fn bidi_channel() -> (FakeTransport, Remote) {
+        let (tx0, rx0) = tokio::sync::mpsc::unbounded_channel();
+        let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel();
+        (
+            FakeTransport { tx: tx0, rx: rx1 },
+            Remote { tx: tx1, rx: rx0 },
+        )
     }
 }

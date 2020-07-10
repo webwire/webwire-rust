@@ -5,7 +5,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 
 pub mod rpc;
-
+pub mod server;
 
 #[derive(Debug)]
 pub enum ProviderError {
@@ -54,7 +54,8 @@ impl ProviderError {
             Self::SerializerError(_) => "SerializerError",
             Self::DeserializerError(_) => "DeserializerError",
             Self::InternalError(_) => "InternalError",
-        }.into()
+        }
+        .into()
     }
 }
 
@@ -103,12 +104,18 @@ impl Server {
         }
         let service_name: &str = parts.get(0).unwrap();
         let method_name: &str = parts.get(1).unwrap();
-        let provider = self.inner.providers.get(service_name).ok_or(ProviderError::ServiceNotFound)?;
-        provider.call(&Request {
-            service: service_name.to_owned(),
-            method: method_name.to_owned(),
-            data: data.to_vec(),
-        }).await
+        let provider = self
+            .inner
+            .providers
+            .get(service_name)
+            .ok_or(ProviderError::ServiceNotFound)?;
+        provider
+            .call(&Request {
+                service: service_name.to_owned(),
+                method: method_name.to_owned(),
+                data: data.to_vec(),
+            })
+            .await
     }
 }
 
