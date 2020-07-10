@@ -88,7 +88,16 @@ impl Engine {
     async fn receiver<T: Transport>(self, mut stream: SplitStream<T>) {
         while let Some(frame) = stream.next().await {
             // FIXME what does it mean when an error shows up here?
-            self.handle_frame(frame.unwrap());
+            let frame = frame.unwrap();
+            println!("<<< {:?}", frame);
+            // FIXME disconnect on parse error
+            match self.handle_frame(frame) {
+                Some(()) => {}
+                None => {
+                    println!("Received client garbade... disconnecting...");
+                    self.inner.shutdown();
+                }
+            }
         }
     }
 
@@ -161,7 +170,11 @@ impl Engine {
                 );
             }
             Message::Request(request) => {
-                self.handle_request(None, request.method_name, _get_data(&data, request.data));
+                self.handle_request(
+                    Some(request.message_id),
+                    request.method_name,
+                    _get_data(&data, request.data),
+                );
             }
             Message::Response(response) => {
                 self.handle_response(
@@ -197,7 +210,8 @@ impl Engine {
             match (engine.inner.server.call(&method, data).await, message_id) {
                 (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                 (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
-                (_, _) => {}
+                (Ok(data), None) => println!("Response for notification ready. Ignoring it."),
+                (Err(data), None) => println!("Error for notification ready. Ignoring it."),
             }
         });
     }
@@ -239,12 +253,19 @@ impl Engine {
     }
 }
 
-impl Drop for EngineInner {
-    fn drop(&mut self) {
-        // Clear requests HashMap causing all channels to be closed.
+impl EngineInner {
+    fn shutdown(&self) {
         self.abort_receiver.abort();
         self.abort_sender.abort();
         self.requests.clear();
+    }
+}
+
+impl Drop for EngineInner {
+    fn drop(&mut self) {
+        // Clear requests HashMap causing all channels to be closed.
+        self.shutdown();
+        println!("Engine dropped.");
     }
 }
 
