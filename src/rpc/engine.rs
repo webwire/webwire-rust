@@ -8,7 +8,8 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use tokio::sync::oneshot;
 
-use crate::{ConsumerError, ProviderError, Server};
+use crate::server::Server;
+use crate::{ConsumerError, ProviderError};
 
 use super::message::{ErrorKind, Message};
 use super::transport::Transport;
@@ -122,7 +123,7 @@ impl Engine {
         let message = Message::parse(data.bytes()).ok_or(())?;
         println!("Handling frame: {:?}", message);
         match message {
-            Message::Heartbeat(_) => {
+            Message::Heartbeat(heartbeat) => {
                 // XXX ignore heartbeats for now until reliable messaging is implemented
             }
             Message::Notification(notification) => {
