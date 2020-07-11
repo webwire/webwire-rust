@@ -1,27 +1,31 @@
-use bytes::Bytes;
-use futures::{Sink, Stream};
+use std::fmt;
 
-pub trait Transport:
-    Stream<Item = Result<Bytes, TransportError>> + Sink<Bytes, Error = TransportError>
-{
+use async_trait::async_trait;
+use bytes::Bytes;
+
+use crate::rpc::engine::Engine;
+
+#[async_trait]
+pub trait Transport {
+    fn send(&self, frame: Bytes) -> Result<(), TransportError>;
+    fn start(&self, engine: Engine);
 }
 
-pub type TransportError = Box<dyn std::error::Error + Send + Sync + 'static>;
-
-/*
 #[derive(Debug)]
 pub enum TransportError {
     Disconnected,
-    Error(Box<dyn std::error::Error>),
 }
 
 impl fmt::Display for TransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self {
-            Self::Disconnected => "Disconnected",
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Disconnected => "Disconnected",
+            }
+        )
     }
 }
 
 impl std::error::Error for TransportError {}
-*/

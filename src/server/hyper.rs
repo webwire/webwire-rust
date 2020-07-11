@@ -1,54 +1,99 @@
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
 use bytes::Bytes;
-use futures::Sink;
+use futures::stream::{SplitSink, SplitStream};
+use futures::{SinkExt, StreamExt};
 use hyper_websocket_lite::AsyncClient;
-use tokio::stream::Stream;
+use tokio::sync::mpsc;
 use websocket_codec::{Message, Opcode};
 
+use crate::rpc::engine::Engine;
 use crate::rpc::transport::{Transport, TransportError};
 
 pub struct WebsocketTransport {
-    client: AsyncClient,
+    tx: mpsc::UnboundedSender<Message>,
+    client: std::sync::Mutex<Option<(AsyncClient, mpsc::UnboundedReceiver<Message>)>>,
 }
 
 impl WebsocketTransport {
     pub fn new(client: AsyncClient) -> Self {
-        Self { client }
-    }
-}
-
-impl Transport for WebsocketTransport {}
-
-impl Stream for WebsocketTransport {
-    type Item = Result<Bytes, TransportError>;
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        match Pin::new(&mut self.get_mut().client).poll_next(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(Some(Ok(message))) => match message.opcode() {
-                Opcode::Text | Opcode::Binary => Poll::Ready(Some(Ok(message.into_data()))),
-                _ => Poll::Pending,
-            },
-            // FIXME it should be possible to downcast this to the proper error type
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(None) => Poll::Ready(None),
+        let (tx, rx) = mpsc::unbounded_channel();
+        Self {
+            tx,
+            client: std::sync::Mutex::new(Some((client, rx))),
         }
     }
 }
 
-impl Sink<Bytes> for WebsocketTransport {
-    type Error = TransportError;
-    fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.get_mut().client).poll_ready(cx)
+impl Transport for WebsocketTransport {
+    fn send(&self, frame: Bytes) -> Result<(), TransportError> {
+        self.tx
+            .send(Message::binary(frame))
+            .map_err(|_| TransportError::Disconnected)
     }
-    fn start_send(self: Pin<&mut Self>, item: Bytes) -> Result<(), Self::Error> {
-        Pin::new(&mut self.get_mut().client).start_send(Message::new(Opcode::Binary, item).unwrap())
+    ///
+    /// Important: This methods panics if start() has already been called.
+    fn start(&self, engine: Engine) {
+        let (client, rx) = self
+            .client
+            .try_lock()
+            .expect("Transport::start() must only be called once.")
+            .take()
+            .expect("Transport::start() must only be called once.");
+        let (sink, stream) = client.split();
+        let sender_fut = sender(sink, rx);
+        let receiver_fut = receiver(stream, self.tx.clone(), engine);
+        tokio::spawn(async move {
+            tokio::join!(sender_fut, receiver_fut);
+        });
     }
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.get_mut().client).poll_flush(cx)
+}
+
+async fn sender(
+    mut sink: SplitSink<AsyncClient, Message>,
+    mut rx: mpsc::UnboundedReceiver<Message>,
+) {
+    while let Some(message) = rx.recv().await {
+        if let Err(e) = sink.send(message).await {
+            // FIXME
+            println!("Transport error while sending: {}", e);
+            return;
+        }
     }
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-        Pin::new(&mut self.get_mut().client).poll_close(cx)
+    // FIXME shutdown receiver, too.
+}
+
+async fn receiver(
+    mut stream: SplitStream<AsyncClient>,
+    tx: mpsc::UnboundedSender<Message>,
+    engine: Engine,
+) {
+    loop {
+        match stream.next().await {
+            Some(Ok(message)) => match message.opcode() {
+                Opcode::Ping => {
+                    if tx.send(Message::pong(Bytes::default())).is_err() {
+                        // Sender is gone. Time to shut down the receiver, too.
+                        break;
+                    }
+                }
+                Opcode::Binary | Opcode::Text => {
+                    if engine.handle_frame(message.into_data()).is_err() {
+                        // Be polite. Send a close message. If the sender is already gone
+                        // this is nothing unusual and to be expected.
+                        let _ = tx.send(Message::close(Some((
+                            1,
+                            "Unable to parse frame".to_string(),
+                        ))));
+                        break;
+                    }
+                }
+                Opcode::Close => break,
+                Opcode::Pong => {}
+            },
+            Some(Err(e)) => {
+                println!("Transport error while receiving: {}", e);
+                return;
+            }
+            None => break,
+        }
     }
 }

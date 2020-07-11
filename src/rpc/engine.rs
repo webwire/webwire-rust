@@ -6,15 +6,11 @@ use std::task::{Context, Poll};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
-use futures::future::{AbortHandle, Abortable};
-use futures::stream::{SplitSink, SplitStream};
-use futures::{SinkExt, StreamExt};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 
 use crate::{ConsumerError, ProviderError, Server};
 
-use super::message::{self, Message};
+use super::message::{ErrorKind, Message};
 use super::transport::Transport;
 
 pub struct Response {
@@ -37,18 +33,23 @@ impl Future for Response {
     }
 }
 
-#[derive(Clone)]
 pub struct Engine {
     inner: Arc<EngineInner>,
 }
 
+impl Clone for Engine {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 pub struct EngineInner {
     server: Server,
-    abort_sender: AbortHandle,
-    abort_receiver: AbortHandle,
+    transport: Box<dyn Transport + Sync + Send>,
     last_message_id: AtomicU64,
     requests: DashMap<u64, oneshot::Sender<Result<Bytes, ConsumerError>>>,
-    tx: UnboundedSender<Bytes>,
 }
 
 fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
@@ -59,56 +60,17 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 }
 
 impl Engine {
-    pub fn new<T: Transport + Send + 'static>(server: Server, transport: T) -> Self {
-        let (sink, stream) = transport.split();
-        let (abort_sender, abort_sender_reg) = AbortHandle::new_pair();
-        let (abort_receiver, abort_receiver_reg) = AbortHandle::new_pair();
-        let (sender_tx, sender_rx) = unbounded_channel::<Bytes>();
+    pub fn new<T: Transport + Sync + Send + 'static>(server: Server, transport: T) -> Self {
         let engine = Self {
             inner: Arc::new(EngineInner {
                 server,
-                abort_sender,
-                abort_receiver,
+                transport: Box::new(transport),
                 last_message_id: AtomicU64::new(0),
                 requests: DashMap::new(),
-                tx: sender_tx,
             }),
         };
-        tokio::spawn(Abortable::new(
-            engine.clone().receiver(stream),
-            abort_receiver_reg,
-        ));
-        tokio::spawn(Abortable::new(
-            engine.clone().sender(sink, sender_rx),
-            abort_sender_reg,
-        ));
+        engine.inner.transport.start(engine.clone());
         engine
-    }
-
-    async fn receiver<T: Transport>(self, mut stream: SplitStream<T>) {
-        while let Some(frame) = stream.next().await {
-            // FIXME what does it mean when an error shows up here?
-            let frame = frame.unwrap();
-            println!("<<< {:?}", frame);
-            // FIXME disconnect on parse error
-            match self.handle_frame(frame) {
-                Some(()) => {}
-                None => {
-                    println!("Received client garbade... disconnecting...");
-                    self.inner.shutdown();
-                }
-            }
-        }
-    }
-
-    async fn sender<T: Transport>(
-        self,
-        mut sink: SplitSink<T, Bytes>,
-        mut rx: UnboundedReceiver<Bytes>,
-    ) {
-        while let Some(frame) = rx.recv().await {
-            sink.send(frame).await.unwrap();
-        }
     }
 
     fn send(&self, frame: Bytes) {
@@ -116,7 +78,7 @@ impl Engine {
         // thus dropped the receiving end of the channel. This is expected
         // behavior when the engine and transport are being terminated and
         // there are still some requests being processed.
-        let _ = self.inner.tx.send(frame);
+        let _ = self.inner.transport.send(frame);
     }
 
     fn next_message_id(&self) -> u64 {
@@ -156,10 +118,11 @@ impl Engine {
             result_rx: rx,
         }
     }
-    pub fn handle_frame(&self, data: Bytes) -> Option<()> {
-        let message = Message::parse(data.bytes())?;
+    pub fn handle_frame(&self, data: Bytes) -> Result<(), ()> {
+        let message = Message::parse(data.bytes()).ok_or(())?;
+        println!("Handling frame: {:?}", message);
         match message {
-            Message::Heartbeat(heartbeat) => {
+            Message::Heartbeat(_) => {
                 // XXX ignore heartbeats for now until reliable messaging is implemented
             }
             Message::Notification(notification) => {
@@ -186,10 +149,10 @@ impl Engine {
                 self.handle_response(
                     error.request_message_id,
                     Err(match error.kind {
-                        message::ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
-                        message::ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
-                        message::ErrorKind::ProviderError => ConsumerError::ProviderError,
-                        message::ErrorKind::Other(other) => ConsumerError::InvalidData(
+                        ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
+                        ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
+                        ErrorKind::ProviderError => ConsumerError::ProviderError,
+                        ErrorKind::Other(other) => ConsumerError::InvalidData(
                             data.slice((other.as_ptr() as usize - data.as_ptr() as usize)..),
                         ),
                     }),
@@ -197,7 +160,7 @@ impl Engine {
             }
             Message::Disconnect => { /*FIXME implement */ }
         }
-        Some(())
+        Ok(())
     }
     /// This function is used to handle both notifications and requests
     fn handle_request(&self, message_id: Option<u64>, method: &str, data: Bytes) {
@@ -210,8 +173,8 @@ impl Engine {
             match (engine.inner.server.call(&method, data).await, message_id) {
                 (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                 (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
-                (Ok(data), None) => println!("Response for notification ready. Ignoring it."),
-                (Err(data), None) => println!("Error for notification ready. Ignoring it."),
+                (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
+                (Err(_), None) => println!("Error for notification ready. Ignoring it."),
             }
         });
     }
@@ -255,8 +218,7 @@ impl Engine {
 
 impl EngineInner {
     fn shutdown(&self) {
-        self.abort_receiver.abort();
-        self.abort_sender.abort();
+        // FIXME stop the possibly running transport
         self.requests.clear();
     }
 }
@@ -273,8 +235,7 @@ impl Drop for EngineInner {
 mod tests {
     use super::*;
     use crate::rpc::transport::TransportError;
-    use futures::{Sink, Stream};
-    use std::task::Context;
+    use async_trait::async_trait;
 
     #[tokio::main]
     #[test]
@@ -312,42 +273,32 @@ mod tests {
             remote.recv().await.unwrap(),
             Bytes::copy_from_slice(b"2 1 get_answer")
         );
+        println!("Sending response...");
         remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
+        println!("Waiting for response...");
         assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
     }
 
     struct FakeTransport {
         tx: tokio::sync::mpsc::UnboundedSender<Bytes>,
-        rx: tokio::sync::mpsc::UnboundedReceiver<Bytes>,
+        rx: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<Bytes>>>,
     }
 
-    impl Transport for FakeTransport {}
-
-    impl Stream for FakeTransport {
-        type Item = Result<Bytes, TransportError>;
-        fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-            match Pin::new(&mut self.get_mut().rx).poll_recv(cx) {
-                Poll::Ready(Some(m)) => Poll::Ready(Some(Ok(m))),
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Pending => Poll::Pending,
+    #[async_trait]
+    impl Transport for FakeTransport {
+        fn send(&self, frame: Bytes) -> Result<(), TransportError> {
+            match self.tx.send(frame) {
+                Ok(()) => Ok(()),
+                Err(_) => Err(TransportError::Disconnected),
             }
         }
-    }
-
-    impl Sink<Bytes> for FakeTransport {
-        type Error = TransportError;
-        fn poll_ready(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn start_send(self: Pin<&mut Self>, item: Bytes) -> Result<(), Self::Error> {
-            self.get_mut().tx.send(item).unwrap();
-            Ok(())
-        }
-        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
-        }
-        fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Self::Error>> {
-            Poll::Ready(Ok(()))
+        fn start(&self, engine: Engine) {
+            let mut rx = self.rx.try_lock().unwrap().take().unwrap();
+            tokio::spawn(async move {
+                while let Some(frame) = rx.recv().await {
+                    engine.handle_frame(frame).unwrap();
+                }
+            });
         }
     }
 
@@ -369,7 +320,10 @@ mod tests {
         let (tx0, rx0) = tokio::sync::mpsc::unbounded_channel();
         let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel();
         (
-            FakeTransport { tx: tx0, rx: rx1 },
+            FakeTransport {
+                tx: tx0,
+                rx: std::sync::Mutex::new(Some(rx1)),
+            },
             Remote { tx: tx1, rx: rx0 },
         )
     }
