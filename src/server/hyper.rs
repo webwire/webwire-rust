@@ -1,10 +1,18 @@
+use std::convert::Infallible;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
 use bytes::Bytes;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
-use hyper_websocket_lite::AsyncClient;
+use hyper::server::conn::AddrStream;
+use hyper::{header, http, Body, Request, Response, StatusCode};
+use hyper_websocket_lite::{server_upgrade, AsyncClient};
 use tokio::sync::mpsc;
 use websocket_codec::{Message, Opcode};
 
+use super::session::{Auth, AuthError};
 use crate::rpc::engine::Engine;
 use crate::rpc::transport::{Transport, TransportError};
 
@@ -95,5 +103,95 @@ async fn receiver(
             }
             None => break,
         }
+    }
+}
+
+async fn on_client<S: Sync + Send + 'static, C: Sync + Send + 'static>(client: AsyncClient, server: super::Server<S, C>, session: S) {
+    let transport = WebsocketTransport::new(client);
+    server.connect(transport, session).await;
+}
+
+async fn upgrade<S, C>(
+    request: Request<Body>,
+    server: super::Server<S, C>,
+) -> Result<Response<Body>, Infallible>
+where
+    S: Sync + Send + 'static,
+    C: Sync + Send + 'static,
+{
+    let auth = match request.headers().get(hyper::header::AUTHORIZATION) {
+        Some(value) => Some(Auth::parse(value.as_bytes())),
+        None => None,
+    };
+    let session = match server.auth(auth).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthorized) => {
+            return Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("Unauthorized"))
+                .unwrap());
+        }
+        Err(AuthError::InternalServerError) => {
+            return Ok(Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("Internal Server Error"))
+                .unwrap());
+        }
+    };
+    let on_client_fut = |client| on_client(client, server, session);
+    Ok(match server_upgrade(request, on_client_fut).await {
+        Ok(response) => response,
+        Err(e) => {
+            println!("Error: {}", e);
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("Internal Server Error"))
+                .unwrap()
+        }
+    })
+}
+
+pub struct HyperService<S: Sync + Send, C: Sync + Send> {
+    pub server: crate::server::Server<S, C>,
+}
+
+impl<S: Send + Sync + 'static, C: Send + Sync + 'static> hyper::service::Service<Request<Body>>
+    for HyperService<S, C>
+{
+    type Response = Response<Body>;
+    type Error = Infallible;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, request: Request<Body>) -> Self::Future {
+        Box::pin(upgrade(request, self.server.clone()))
+    }
+}
+
+pub struct MakeHyperService<S: Sync + Send, C: Sync + Send> {
+    pub server: crate::server::Server<S, C>,
+}
+
+impl<S: Send + Sync + 'static, C: Sync + Send + 'static> hyper::service::Service<&AddrStream>
+    for MakeHyperService<S, C>
+{
+    type Response = HyperService<S, C>;
+    type Error = http::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, _conn: &AddrStream) -> Self::Future {
+        let server = self.server.clone();
+        let fut = async move { Ok(HyperService { server }) };
+        Box::pin(fut)
     }
 }

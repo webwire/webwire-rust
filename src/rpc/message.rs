@@ -35,14 +35,16 @@ pub struct Heartbeat {
 #[derive(Debug, Eq, PartialEq)]
 pub struct Notification<'a> {
     pub message_id: u64,
-    pub method_name: &'a str,
+    pub service: &'a str,
+    pub method: &'a str,
     pub data: Option<&'a [u8]>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Request<'a> {
     pub message_id: u64,
-    pub method_name: &'a str,
+    pub service: &'a str,
+    pub method: &'a str,
     pub data: Option<&'a [u8]>,
 }
 
@@ -62,6 +64,7 @@ pub struct Error<'a> {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum ErrorKind<'a> {
+    InvalidMessage,
     ServiceNotFound,
     MethodNotFound,
     // This is similar to an "HTTP 500 - Internal Server Error" except that
@@ -99,13 +102,14 @@ fn parse_notification(input: &[u8]) -> IResult<&[u8], Notification> {
             tag("1 "),
             cut(tuple((
                 parse_number,
-                preceded(char(' '), parse_string),
+                preceded(char(' '), parse_service_method),
                 opt(preceded(char(' '), parse_rest)),
             ))),
         ),
-        |(message_id, method_name, data)| Notification {
+        |(message_id, (service, method), data)| Notification {
             message_id,
-            method_name,
+            service,
+            method,
             data,
         },
     )(input)
@@ -117,13 +121,14 @@ fn parse_request(input: &[u8]) -> IResult<&[u8], Request> {
             tag("2 "),
             cut(tuple((
                 parse_number,
-                preceded(char(' '), parse_string),
+                preceded(char(' '), parse_service_method),
                 opt(preceded(char(' '), parse_rest)),
             ))),
         ),
-        |(message_id, method_name, data)| Request {
+        |(message_id, (service, method), data)| Request {
             message_id,
-            method_name,
+            service,
+            method,
             data,
         },
     )(input)
@@ -185,6 +190,21 @@ fn parse_string(input: &[u8]) -> IResult<&[u8], &str> {
     map_res(take_while_m_n(1, 255, |b| b != b' '), std::str::from_utf8)(input)
 }
 
+fn parse_service_method(input: &[u8]) -> IResult<&[u8], (&str, &str)> {
+    map_res(
+        parse_string,
+        |name| {
+            println!("splitting name: {}", name);
+            let parts = name.rsplitn(2, '.').collect::<Vec<_>>();
+            if parts.len() == 2 {
+                Ok((parts[1], parts[0]))
+            } else {
+                Err(ErrorKind::InvalidMessage)
+            }
+        }
+    )(input)
+}
+
 fn parse_number(input: &[u8]) -> IResult<&[u8], u64> {
     map_res(
         take_while_m_n(1, 16, |c| c >= b'0' && c <= b'9'),
@@ -213,10 +233,11 @@ fn test_parse_heartbeat() {
 #[test]
 fn test_parse_notification() {
     assert_eq!(
-        Message::parse(b"1 43 hello world"),
+        Message::parse(b"1 43 example.hello world"),
         Some(Message::Notification(Notification {
             message_id: 43,
-            method_name: "hello",
+            service: "example",
+            method: "hello",
             data: Some(b"world"),
         }))
     );
@@ -225,10 +246,11 @@ fn test_parse_notification() {
 #[test]
 fn test_parse_notification_no_data() {
     assert_eq!(
-        Message::parse(b"1 44 ping"),
+        Message::parse(b"1 44 example.ping"),
         Some(Message::Notification(Notification {
             message_id: 44,
-            method_name: "ping",
+            service: "example",
+            method: "ping",
             data: None,
         }))
     );
@@ -237,10 +259,11 @@ fn test_parse_notification_no_data() {
 #[test]
 fn test_parse_request() {
     assert_eq!(
-        Message::parse(b"2 45 add [4, 5]"),
+        Message::parse(b"2 45 example.add [4, 5]"),
         Some(Message::Request(Request {
             message_id: 45,
-            method_name: "add",
+            service: "example",
+            method: "add",
             data: Some(b"[4, 5]"),
         }))
     );
@@ -249,10 +272,11 @@ fn test_parse_request() {
 #[test]
 fn test_parse_request_no_data() {
     assert_eq!(
-        Message::parse(b"2 46 get_time"),
+        Message::parse(b"2 46 example.get_time"),
         Some(Message::Request(Request {
             message_id: 46,
-            method_name: "get_time",
+            service: "example",
+            method: "get_time",
             data: None,
         }))
     );

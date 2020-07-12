@@ -6,7 +6,7 @@ use bytes::Bytes;
 use crate::rpc::engine::Engine;
 
 #[async_trait]
-pub trait Transport {
+pub trait Transport: Sync + Send {
     fn send(&self, frame: Bytes) -> Result<(), TransportError>;
     fn start(&self, engine: Engine);
 }

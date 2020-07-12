@@ -8,8 +8,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use tokio::sync::oneshot;
 
-use crate::server::Server;
-use crate::{ConsumerError, ProviderError};
+use crate::service::{Provider, ConsumerError, ProviderError};
 
 use super::message::{ErrorKind, Message};
 use super::transport::Transport;
@@ -47,7 +46,7 @@ impl Clone for Engine {
 }
 
 pub struct EngineInner {
-    server: Server,
+    provider: Box<dyn Provider + Sync + Send>,
     transport: Box<dyn Transport + Sync + Send>,
     last_message_id: AtomicU64,
     requests: DashMap<u64, oneshot::Sender<Result<Bytes, ConsumerError>>>,
@@ -61,10 +60,10 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 }
 
 impl Engine {
-    pub fn new<T: Transport + Sync + Send + 'static>(server: Server, transport: T) -> Self {
+    pub fn new<P: Provider + Sync + Send + 'static, T: Transport + Sync + Send + 'static>(provider: P, transport: T) -> Self {
         let engine = Self {
             inner: Arc::new(EngineInner {
-                server,
+                provider: Box::new(provider),
                 transport: Box::new(transport),
                 last_message_id: AtomicU64::new(0),
                 requests: DashMap::new(),
@@ -123,20 +122,22 @@ impl Engine {
         let message = Message::parse(data.bytes()).ok_or(())?;
         println!("Handling frame: {:?}", message);
         match message {
-            Message::Heartbeat(heartbeat) => {
+            Message::Heartbeat(_heartbeat) => {
                 // XXX ignore heartbeats for now until reliable messaging is implemented
             }
             Message::Notification(notification) => {
                 self.handle_request(
                     None,
-                    notification.method_name,
+                    notification.service,
+                    notification.method,
                     _get_data(&data, notification.data),
                 );
             }
             Message::Request(request) => {
                 self.handle_request(
                     Some(request.message_id),
-                    request.method_name,
+                    request.service,
+                    request.method,
                     _get_data(&data, request.data),
                 );
             }
@@ -150,6 +151,8 @@ impl Engine {
                 self.handle_response(
                     error.request_message_id,
                     Err(match error.kind {
+                        // FIXME how do we handle when the server does not understand our message?
+                        ErrorKind::InvalidMessage => ConsumerError::ProviderError,
                         ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
                         ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
                         ErrorKind::ProviderError => ConsumerError::ProviderError,
@@ -164,14 +167,20 @@ impl Engine {
         Ok(())
     }
     /// This function is used to handle both notifications and requests
-    fn handle_request(&self, message_id: Option<u64>, method: &str, data: Bytes) {
+    fn handle_request(&self, message_id: Option<u64>, service: &str, method: &str, data: Bytes) {
         // FIXME add some kind of rate limiting and/or max concurrent requests
         // setting. Otherwise this could easily used for a denial of service
         // attack.
         let engine = self.clone();
+        let service = service.to_owned();
         let method = method.to_owned();
         tokio::spawn(async move {
-            match (engine.inner.server.call(&method, data).await, message_id) {
+            let request = crate::service::Request {
+                service,
+                method,
+                data,
+            };
+            match (engine.inner.provider.call(&request).await, message_id) {
                 (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                 (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
                 (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
@@ -180,7 +189,7 @@ impl Engine {
         });
     }
     /// This function is used to send both normal responses and error responses
-    fn send_response(&self, request_message_id: u64, data: Result<Vec<u8>, ProviderError>) {
+    fn send_response(&self, request_message_id: u64, data: Result<Bytes, ProviderError>) {
         // FIXME this is almost the same code as when sending notifications and requests
         let message_id = self.next_message_id();
         let header = match data {
@@ -189,7 +198,7 @@ impl Engine {
         };
         let data = match data {
             Ok(data) => data,
-            Err(err) => err.to_vec(),
+            Err(err) => err.to_bytes(),
         };
         let capacity = header.len() + 1 + data.len();
         let mut buf = BytesMut::with_capacity(capacity);
@@ -266,9 +275,9 @@ mod tests {
     #[tokio::main]
     #[test]
     async fn engine_response() {
-        let server = Server::new();
+        let provider = NoneProvider {};
         let (transport, mut remote) = bidi_channel();
-        let mut engine = Engine::new(server, transport);
+        let mut engine = Engine::new(provider, transport);
         let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
         assert_eq!(
             remote.recv().await.unwrap(),
@@ -278,6 +287,15 @@ mod tests {
         remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
         println!("Waiting for response...");
         assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
+    }
+
+    struct NoneProvider {}
+
+    #[async_trait]
+    impl Provider for NoneProvider {
+        async fn call(&self, _request: &crate::service::Request) -> Result<Bytes, ProviderError> {
+            Err(ProviderError::ServiceNotFound)
+        }
     }
 
     struct FakeTransport {
