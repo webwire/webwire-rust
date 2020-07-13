@@ -8,14 +8,14 @@ use crate::rpc::engine::Engine;
 use crate::rpc::transport::Transport;
 use crate::service::{Provider, ProviderError, Request};
 
-pub struct Connection<S: Sync + Send, C: Sync + Send>
+pub struct Connection<S: Sync + Send>
 where
     Self: Sync + Send,
 {
-    inner: Arc<ConnectionInner<S, C>>,
+    inner: Arc<ConnectionInner<S>>,
 }
 
-impl<S: Sync + Send, C: Sync + Send> Clone for Connection<S, C> {
+impl<S: Sync + Send> Clone for Connection<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -23,17 +23,17 @@ impl<S: Sync + Send, C: Sync + Send> Clone for Connection<S, C> {
     }
 }
 
-pub struct ConnectionInner<S: Sync + Send, C: Sync + Send>
+pub struct ConnectionInner<S: Sync + Send>
 where
     Self: Sync + Send,
 {
     session: Arc<S>,
-    server: Server<S, C>,
+    server: Server<S>,
     engine: Engine,
 }
 
-impl<S: Sync + Send + 'static, C: Sync + Send + 'static> Connection<S, C> {
-    pub fn new<T: Transport + 'static>(server: Server<S, C>, transport: T, session: S) -> Self {
+impl<S: Sync + Send + 'static> Connection<S> {
+    pub fn new<T: Transport + 'static>(server: Server<S>, transport: T, session: S) -> Self {
         let session = Arc::new(session);
         Self {
             inner: Arc::new(ConnectionInner {
@@ -45,13 +45,13 @@ impl<S: Sync + Send + 'static, C: Sync + Send + 'static> Connection<S, C> {
     }
 }
 
-pub struct ConnectionProvider<S: Sync + Send, C: Sync + Send> {
-    server: Server<S, C>,
+pub struct ConnectionProvider<S: Sync + Send> {
+    server: Server<S>,
     session: Arc<S>,
 }
 
-impl<S: Sync + Send, C: Sync + Send> ConnectionProvider<S, C> {
-    pub fn new(server: &Server<S, C>, session: &Arc<S>) -> Self {
+impl<S: Sync + Send> ConnectionProvider<S> {
+    pub fn new(server: &Server<S>, session: &Arc<S>) -> Self {
         Self {
             server: server.clone(),
             session: session.clone(),
@@ -60,7 +60,7 @@ impl<S: Sync + Send, C: Sync + Send> ConnectionProvider<S, C> {
 }
 
 #[async_trait]
-impl<S: Sync + Send, C: Sync + Send> Provider for ConnectionProvider<S, C> {
+impl<S: Sync + Send> Provider for ConnectionProvider<S> {
     async fn call(&self, request: &Request) -> Result<Bytes, ProviderError> {
         let server = self.server.clone();
         let session = self.session.clone();

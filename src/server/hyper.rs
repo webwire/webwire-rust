@@ -106,18 +106,21 @@ async fn receiver(
     }
 }
 
-async fn on_client<S: Sync + Send + 'static, C: Sync + Send + 'static>(client: AsyncClient, server: super::Server<S, C>, session: S) {
+async fn on_client<S: Sync + Send + 'static>(
+    client: AsyncClient,
+    server: super::Server<S>,
+    session: S,
+) {
     let transport = WebsocketTransport::new(client);
     server.connect(transport, session).await;
 }
 
-async fn upgrade<S, C>(
+async fn upgrade<S>(
     request: Request<Body>,
-    server: super::Server<S, C>,
+    server: super::Server<S>,
 ) -> Result<Response<Body>, Infallible>
 where
     S: Sync + Send + 'static,
-    C: Sync + Send + 'static,
 {
     let auth = match request.headers().get(hyper::header::AUTHORIZATION) {
         Some(value) => Some(Auth::parse(value.as_bytes())),
@@ -154,13 +157,11 @@ where
     })
 }
 
-pub struct HyperService<S: Sync + Send, C: Sync + Send> {
-    pub server: crate::server::Server<S, C>,
+pub struct HyperService<S: Sync + Send> {
+    pub server: crate::server::Server<S>,
 }
 
-impl<S: Send + Sync + 'static, C: Send + Sync + 'static> hyper::service::Service<Request<Body>>
-    for HyperService<S, C>
-{
+impl<S: Send + Sync + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
     type Response = Response<Body>;
     type Error = Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -174,14 +175,12 @@ impl<S: Send + Sync + 'static, C: Send + Sync + 'static> hyper::service::Service
     }
 }
 
-pub struct MakeHyperService<S: Sync + Send, C: Sync + Send> {
-    pub server: crate::server::Server<S, C>,
+pub struct MakeHyperService<S: Sync + Send> {
+    pub server: crate::server::Server<S>,
 }
 
-impl<S: Send + Sync + 'static, C: Sync + Send + 'static> hyper::service::Service<&AddrStream>
-    for MakeHyperService<S, C>
-{
-    type Response = HyperService<S, C>;
+impl<S: Send + Sync + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
+    type Response = HyperService<S>;
     type Error = http::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 

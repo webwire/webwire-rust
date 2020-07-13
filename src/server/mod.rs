@@ -12,20 +12,20 @@ pub mod connection;
 
 use connection::Connection;
 
-pub struct Server<S: Sync + Send, C: Sync + Send> {
-    inner: Arc<ServerInner<S, C>>,
+pub struct Server<S: Sync + Send> {
+    inner: Arc<ServerInner<S>>,
 }
 
-struct ServerInner<S: Sync + Send, C: Sync + Send> {
-    connections: RwLock<Vec<Connection<S, C>>>,
-    service_registry: ServiceRegistry<S, C>,
+struct ServerInner<S: Sync + Send> {
+    connections: RwLock<Vec<Connection<S>>>,
+    service_registry: ServiceRegistry<S>,
     session_handler: Box<dyn SessionHandler<S> + Sync + Send>,
 }
 
-impl<S: Sync + Send + 'static, C: Sync + Send + 'static> Server<S, C> {
+impl<S: Sync + Send + 'static> Server<S> {
     pub fn new<H: SessionHandler<S> + Sync + Send + 'static>(
         session_handler: H,
-        service_registry: ServiceRegistry<S, C>,
+        service_registry: ServiceRegistry<S>,
     ) -> Self {
         Self {
             inner: Arc::new(ServerInner {
@@ -46,7 +46,7 @@ impl<S: Sync + Send + 'static, C: Sync + Send + 'static> Server<S, C> {
     }
 }
 
-impl<S: Sync + Send, C: Sync + Send> Clone for Server<S, C> {
+impl<S: Sync + Send> Clone for Server<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

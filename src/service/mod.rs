@@ -62,16 +62,16 @@ pub trait Provider: Sync + Send {
     async fn call(&self, request: &Request) -> Result<Bytes, ProviderError>;
 }
 
-pub trait ServiceFactory<S: Sync + Send, C: Sync + Send> where Self: Sync + Send {
+pub trait ServiceFactory<S: Sync + Send> where Self: Sync + Send {
     fn name(&self) -> &'static str;
-    fn create(&self, session: &Arc<S>, context: &Arc<C>) -> Box<dyn Provider>;
+    fn create(&self, session: &Arc<S>) -> Box<dyn Provider>;
 }
 
-pub struct ServiceRegistry<S: Sync + Send, C: Sync + Send> {
-    inner: Arc<ServiceRegistryInner<S, C>>,
+pub struct ServiceRegistry<S: Sync + Send> {
+    inner: Arc<ServiceRegistryInner<S>>,
 }
 
-impl<S: Sync + Send, C: Sync + Send> Clone for ServiceRegistry<S, C> {
+impl<S: Sync + Send> Clone for ServiceRegistry<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -79,16 +79,15 @@ impl<S: Sync + Send, C: Sync + Send> Clone for ServiceRegistry<S, C> {
     }
 }
 
-impl<S: Sync + Send, C: Sync + Send> ServiceRegistry<S, C> {
-    pub fn new(context: Arc<C>) -> Self {
+impl<S: Sync + Send> ServiceRegistry<S> {
+    pub fn new() -> Self {
         Self {
             inner: Arc::new(ServiceRegistryInner {
                 services: DashMap::new(),
-                context,
             }),
         }
     }
-    pub fn register<F: ServiceFactory<S, C> + 'static>(&mut self, factory: F) {
+    pub fn register<F: ServiceFactory<S> + 'static>(&mut self, factory: F) {
         self
             .inner
             .services
@@ -99,11 +98,10 @@ impl<S: Sync + Send, C: Sync + Send> ServiceRegistry<S, C> {
             .inner
             .services
             .get(service_name)
-            .map(|factory| factory.create(session, &self.inner.context))
+            .map(|factory| factory.create(session))
     }
 }
 
-pub struct ServiceRegistryInner<S: Sync + Send, C: Sync + Send> {
-    services: DashMap<String, Box<dyn ServiceFactory<S, C>>>,
-    context: Arc<C>,
+pub struct ServiceRegistryInner<S: Sync + Send> {
+    services: DashMap<String, Box<dyn ServiceFactory<S>>>,
 }
