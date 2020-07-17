@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -61,16 +61,14 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 
 impl Engine {
     pub fn new<P: Provider + Sync + Send + 'static, T: Transport + Sync + Send + 'static>(provider: P, transport: T) -> Self {
-        let engine = Self {
-            inner: Arc::new(EngineInner {
-                provider: Box::new(provider),
-                transport: Box::new(transport),
-                last_message_id: AtomicU64::new(0),
-                requests: DashMap::new(),
-            }),
-        };
-        engine.inner.transport.start(engine.clone());
-        engine
+        let inner = Arc::new(EngineInner {
+            provider: Box::new(provider),
+            transport: Box::new(transport),
+            last_message_id: AtomicU64::new(0),
+            requests: DashMap::new(),
+        });
+        inner.transport.start(EngineRef { inner: Arc::downgrade(&inner) });
+        Self { inner }
     }
 
     fn send(&self, frame: Bytes) {
@@ -311,7 +309,7 @@ mod tests {
                 Err(_) => Err(TransportError::Disconnected),
             }
         }
-        fn start(&self, engine: Engine) {
+        fn start(&self, engine: EngineRef) {
             let mut rx = self.rx.try_lock().unwrap().take().unwrap();
             tokio::spawn(async move {
                 while let Some(frame) = rx.recv().await {
@@ -345,5 +343,24 @@ mod tests {
             },
             Remote { tx: tx1, rx: rx0 },
         )
+    }
+}
+
+
+pub struct EngineRef {
+    inner: Weak<EngineInner>,
+}
+
+impl EngineRef {
+    pub fn upgrade(&self) -> Option<Engine> {
+        Some(Engine {
+            inner: self.inner.upgrade()?
+        })
+    }
+    pub fn handle_frame(&self, data: Bytes) -> Result<(), ()> {
+        match self.upgrade() {
+            Some(engine) => engine.handle_frame(data),
+            None => Err(()),
+        }
     }
 }

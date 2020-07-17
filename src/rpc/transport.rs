@@ -3,12 +3,12 @@ use std::fmt;
 use async_trait::async_trait;
 use bytes::Bytes;
 
-use crate::rpc::engine::Engine;
+use crate::rpc::engine::EngineRef;
 
 #[async_trait]
 pub trait Transport: Sync + Send {
     fn send(&self, frame: Bytes) -> Result<(), TransportError>;
-    fn start(&self, engine: Engine);
+    fn start(&self, engine: EngineRef);
 }
 
 #[derive(Debug)]

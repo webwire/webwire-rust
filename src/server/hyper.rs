@@ -13,7 +13,7 @@ use tokio::sync::mpsc;
 use websocket_codec::{Message, Opcode};
 
 use super::session::{Auth, AuthError};
-use crate::rpc::engine::Engine;
+use crate::rpc::engine::EngineRef;
 use crate::rpc::transport::{Transport, TransportError};
 
 pub struct WebsocketTransport {
@@ -39,7 +39,7 @@ impl Transport for WebsocketTransport {
     }
     ///
     /// Important: This methods panics if start() has already been called.
-    fn start(&self, engine: Engine) {
+    fn start(&self, engine: EngineRef) {
         let (client, rx) = self
             .client
             .try_lock()
@@ -72,7 +72,7 @@ async fn sender(
 async fn receiver(
     mut stream: SplitStream<AsyncClient>,
     tx: mpsc::UnboundedSender<Message>,
-    engine: Engine,
+    engine: EngineRef,
 ) {
     loop {
         match stream.next().await {
