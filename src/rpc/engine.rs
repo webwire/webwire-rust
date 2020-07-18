@@ -129,11 +129,10 @@ impl Engine {
             let request = crate::service::Request {
                 service,
                 method,
-                data,
                 session: (),
             };
             if let Some(provider) = engine.listener.upgrade() {
-                match (provider.call(&request).await, message_id) {
+                match (provider.call(&request, data).await, message_id) {
                     (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                     (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
                     (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
@@ -314,7 +313,11 @@ mod tests {
 
     #[async_trait]
     impl Provider for NoneProvider {
-        async fn call(&self, _request: &crate::service::Request) -> Result<Bytes, ProviderError> {
+        async fn call(
+            &self,
+            _request: &crate::service::Request,
+            data: Bytes,
+        ) -> Result<Bytes, ProviderError> {
             Err(ProviderError::ServiceNotFound)
         }
     }

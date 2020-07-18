@@ -51,13 +51,13 @@ impl<S: Sync + Send + 'static> Connection<S> {
 
 #[async_trait]
 impl<S: Sync + Send> Provider for ConnectionInner<S> {
-    async fn call(&self, request: &Request) -> Result<Bytes, ProviderError> {
+    async fn call(&self, request: &Request, data: Bytes) -> Result<Bytes, ProviderError> {
         self.server
             .inner
             .service_registry
             .get(&request.service, &self.session)
             .ok_or(ProviderError::ServiceNotFound)?
-            .call(request)
+            .call(request, data)
             .await
     }
 }
