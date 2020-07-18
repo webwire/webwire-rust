@@ -9,6 +9,7 @@ use dashmap::DashMap;
 use tokio::sync::oneshot;
 
 use crate::service::{ConsumerError, Provider, ProviderError};
+use crate::utils::AtomicWeak;
 
 use super::message::{ErrorKind, Message};
 use super::transport::{FrameError, FrameHandler, Transport};
@@ -37,7 +38,7 @@ pub struct Engine
 where
     Self: Sync + Send,
 {
-    provider: Box<dyn Provider + Sync + Send>,
+    provider: AtomicWeak<dyn Provider + Sync + Send>,
     transport: Box<dyn Transport + Sync + Send>,
     last_message_id: AtomicU64,
     requests: DashMap<u64, oneshot::Sender<Result<Bytes, ConsumerError>>>,
@@ -51,18 +52,18 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 }
 
 impl Engine {
-    pub fn new<P: Provider + Sync + Send + 'static, T: Transport + Sync + Send + 'static>(
-        provider: P,
-        transport: T,
-    ) -> Arc<Self> {
-        let this = Arc::new(Engine {
-            provider: Box::new(provider),
+    pub fn new<T: Transport + Sync + Send + 'static>(transport: T) -> Self {
+        Engine {
+            provider: AtomicWeak::default(),
             transport: Box::new(transport),
             last_message_id: AtomicU64::new(0),
             requests: DashMap::new(),
-        });
-        this.transport.start(Box::new(Arc::downgrade(&this)));
-        this
+        }
+    }
+
+    pub fn start(self: &Arc<Self>, provider: Weak<dyn Provider + Sync + Send>) {
+        self.provider.replace(provider);
+        self.transport.start(Box::new(Arc::downgrade(self)));
     }
 
     fn send(&self, frame: Bytes) {
@@ -129,12 +130,17 @@ impl Engine {
                 service,
                 method,
                 data,
+                session: (),
             };
-            match (engine.provider.call(&request).await, message_id) {
-                (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
-                (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
-                (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
-                (Err(_), None) => println!("Error for notification ready. Ignoring it."),
+            if let Some(provider) = engine.provider.upgrade() {
+                match (provider.call(&request).await, message_id) {
+                    (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
+                    (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
+                    (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
+                    (Err(_), None) => println!("Error for notification ready. Ignoring it."),
+                }
+            } else {
+                println!("Provider not set. Did you forget to call Engine::start?");
             }
         });
     }
@@ -280,9 +286,10 @@ mod tests {
     #[tokio::main]
     #[test]
     async fn engine_response() {
-        let provider = NoneProvider {};
+        let provider = Arc::new(NoneProvider {});
         let (transport, mut remote) = bidi_channel();
-        let engine = Engine::new(provider, transport);
+        let engine = Arc::new(Engine::new(transport));
+        engine.start(Arc::downgrade(&provider) as Weak<dyn Provider + Sync + Send>);
         let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
         assert_eq!(
             remote.recv().await.unwrap(),
@@ -294,7 +301,7 @@ mod tests {
         assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
     }
 
-    struct NoneProvider {}
+    struct NoneProvider where {}
 
     #[async_trait]
     impl Provider for NoneProvider {
@@ -320,7 +327,14 @@ mod tests {
             let mut rx = self.rx.try_lock().unwrap().take().unwrap();
             tokio::spawn(async move {
                 while let Some(frame) = rx.recv().await {
-                    engine.handle_frame(frame).unwrap();
+                    match engine.handle_frame(frame) {
+                        Ok(()) => continue,
+                        Err(FrameError::HandlerGone) => break,
+                        Err(FrameError::ParseError) => {
+                            println!("An error occured while trying to parse a client frame");
+                            break;
+                        }
+                    }
                 }
             });
         }
