@@ -12,7 +12,7 @@ use hyper_websocket_lite::{server_upgrade, AsyncClient};
 use tokio::sync::mpsc;
 use websocket_codec::{Message, Opcode};
 
-use super::session::{Auth, AuthError};
+use super::session::{Auth, AuthError, Session};
 use crate::rpc::transport::{FrameError, FrameHandler, Transport, TransportError};
 
 pub struct WebsocketTransport {
@@ -111,7 +111,7 @@ async fn receiver(
     frame_handler.handle_disconnect();
 }
 
-async fn on_client<S: Sync + Send + 'static>(
+async fn on_client<S: Session + 'static>(
     client: AsyncClient,
     server: super::Server<S>,
     session: S,
@@ -125,7 +125,7 @@ async fn upgrade<S>(
     server: super::Server<S>,
 ) -> Result<Response<Body>, Infallible>
 where
-    S: Sync + Send + 'static,
+    S: Session + 'static,
 {
     let auth = match request.headers().get(hyper::header::AUTHORIZATION) {
         Some(value) => Some(Auth::parse(value.as_bytes())),
@@ -162,11 +162,11 @@ where
     })
 }
 
-pub struct HyperService<S: Sync + Send> {
+pub struct HyperService<S: Session> {
     pub server: crate::server::Server<S>,
 }
 
-impl<S: Send + Sync + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
+impl<S: Session + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
     type Response = Response<Body>;
     type Error = Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -180,11 +180,11 @@ impl<S: Send + Sync + 'static> hyper::service::Service<Request<Body>> for HyperS
     }
 }
 
-pub struct MakeHyperService<S: Sync + Send> {
+pub struct MakeHyperService<S: Session> {
     pub server: crate::server::Server<S>,
 }
 
-impl<S: Send + Sync + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
+impl<S: Session + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
     type Response = HyperService<S>;
     type Error = http::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;

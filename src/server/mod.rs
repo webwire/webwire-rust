@@ -4,37 +4,37 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use crate::rpc::transport::Transport;
-use crate::service::ServiceRegistry;
+use crate::service::ProviderRegistry;
 
 pub mod connection;
 pub mod hyper;
 pub mod session;
 
 use connection::Connection;
-use session::{Auth, AuthError, SessionHandler};
+use session::{Auth, AuthError, Session, SessionHandler};
 
-pub struct Server<S: Sync + Send> {
+pub struct Server<S: Session> {
     inner: Arc<ServerInner<S>>,
 }
 
-struct ServerInner<S: Sync + Send> {
+struct ServerInner<S: Session> {
     last_connection_id: AtomicUsize,
     connections: DashMap<usize, Connection<S>>,
-    service_registry: ServiceRegistry<S>,
+    providers: ProviderRegistry<S>,
     session_handler: Box<dyn SessionHandler<S> + Sync + Send>,
 }
 
-impl<S: Sync + Send + 'static> Server<S> {
+impl<S: Session + 'static> Server<S> {
     pub fn new<H: SessionHandler<S> + Sync + Send + 'static>(
         session_handler: H,
-        service_registry: ServiceRegistry<S>,
+        providers: ProviderRegistry<S>,
     ) -> Self {
         Self {
             inner: Arc::new(ServerInner {
                 last_connection_id: AtomicUsize::new(0),
                 connections: DashMap::new(),
                 session_handler: Box::new(session_handler),
-                service_registry,
+                providers,
             }),
         }
     }
@@ -57,7 +57,7 @@ impl<S: Sync + Send + 'static> Server<S> {
     }
 }
 
-impl<S: Sync + Send + 'static> Clone for Server<S> {
+impl<S: Session + 'static> Clone for Server<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

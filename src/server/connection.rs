@@ -3,19 +3,20 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use bytes::Bytes;
 
+use super::session::Session;
 use super::Server;
 use crate::rpc::engine::{Engine, EngineListener};
 use crate::rpc::transport::Transport;
 use crate::service::{Provider, ProviderError, Request};
 
-pub struct Connection<S: Sync + Send>
+pub struct Connection<S: Session>
 where
     Self: Sync + Send,
 {
     inner: Arc<ConnectionInner<S>>,
 }
 
-impl<S: Sync + Send> Clone for Connection<S> {
+impl<S: Session> Clone for Connection<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -23,7 +24,7 @@ impl<S: Sync + Send> Clone for Connection<S> {
     }
 }
 
-pub struct ConnectionInner<S: Sync + Send>
+pub struct ConnectionInner<S: Session>
 where
     Self: Sync + Send,
 {
@@ -33,17 +34,16 @@ where
     engine: Arc<Engine>,
 }
 
-impl<S: Sync + Send + 'static> Connection<S> {
+impl<S: Session + 'static> Connection<S> {
     pub fn new<T: Transport + 'static>(
         id: usize,
         server: Server<S>,
         transport: T,
         session: S,
     ) -> Self {
-        let session = Arc::new(session);
         let inner = Arc::new(ConnectionInner {
             id,
-            session,
+            session: Arc::new(session),
             server: server.clone(),
             engine: Arc::new(Engine::new(transport)),
         });
@@ -55,19 +55,26 @@ impl<S: Sync + Send + 'static> Connection<S> {
 }
 
 #[async_trait]
-impl<S: Sync + Send> Provider for ConnectionInner<S> {
-    async fn call(&self, request: &Request, data: Bytes) -> Result<Bytes, ProviderError> {
+impl<S: Session + 'static> EngineListener for ConnectionInner<S> {
+    async fn call(
+        &self,
+        service: String,
+        method: String,
+        data: Bytes,
+    ) -> Result<Bytes, ProviderError> {
+        let request = Request {
+            service: service,
+            method: method,
+            session: self.session.clone(),
+        };
         self.server
             .inner
-            .service_registry
-            .get(&request.service, &self.session)
+            .providers
+            .get(&request.service)
             .ok_or(ProviderError::ServiceNotFound)?
             .call(request, data)
             .await
     }
-}
-
-impl<S: Sync + Send + 'static> EngineListener for ConnectionInner<S> {
     fn shutdown(&self) {
         self.server.clone().disconnect(self.id);
     }

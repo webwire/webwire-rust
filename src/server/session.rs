@@ -3,6 +3,8 @@ use std::fmt;
 use async_trait::async_trait;
 use uuid::Uuid;
 
+pub trait Session: Sync + Send {}
+
 pub enum Auth {
     // Username + Password
     Login { username: String, password: String },

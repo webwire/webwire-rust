@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 
+use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use tokio::sync::oneshot;
@@ -126,13 +127,8 @@ impl Engine {
         let service = service.to_owned();
         let method = method.to_owned();
         tokio::spawn(async move {
-            let request = crate::service::Request {
-                service,
-                method,
-                session: (),
-            };
             if let Some(provider) = engine.listener.upgrade() {
-                match (provider.call(&request, data).await, message_id) {
+                match (provider.call(service, method, data).await, message_id) {
                     (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                     (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
                     (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
@@ -256,7 +252,14 @@ impl FrameHandler for Weak<Engine> {
     }
 }
 
-pub trait EngineListener: Provider {
+#[async_trait]
+pub trait EngineListener {
+    async fn call(
+        &self,
+        service: String,
+        method: String,
+        data: Bytes,
+    ) -> Result<Bytes, ProviderError>;
     fn shutdown(&self);
 }
 
@@ -312,17 +315,15 @@ mod tests {
     struct NoneProvider {}
 
     #[async_trait]
-    impl Provider for NoneProvider {
+    impl EngineListener for NoneProvider {
         async fn call(
             &self,
-            _request: &crate::service::Request,
+            service: String,
+            method: String,
             data: Bytes,
         ) -> Result<Bytes, ProviderError> {
             Err(ProviderError::ServiceNotFound)
         }
-    }
-
-    impl EngineListener for NoneProvider {
         fn shutdown(&self) {}
     }
 

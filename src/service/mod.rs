@@ -32,7 +32,7 @@ pub enum ConsumerError {
 pub struct Request<S = ()> {
     pub service: String,
     pub method: String,
-    pub session: S,
+    pub session: Arc<S>,
 }
 
 pub type Response<E> = Result<Bytes, E>;
@@ -52,56 +52,35 @@ impl ProviderError {
 }
 
 #[async_trait]
-pub trait Consumer {
+pub trait Consumer: Sync + Send {
+    fn name(&self) -> &'static str;
     async fn call(&self, request: &Request, data: Bytes) -> Result<Bytes, ConsumerError>;
 }
 
 #[async_trait]
 pub trait Provider<S = ()>: Sync + Send {
-    async fn call(&self, request: &Request<S>, data: Bytes) -> Result<Bytes, ProviderError>;
+    fn name(&self) -> &'static str;
+    async fn call(&self, request: Request<S>, data: Bytes) -> Result<Bytes, ProviderError>;
 }
 
-pub trait ServiceFactory<S: Sync + Send>
+pub struct ProviderRegistry<S: Sync + Send>
 where
     Self: Sync + Send,
 {
-    fn name(&self) -> &'static str;
-    fn create(&self, session: &Arc<S>) -> Box<dyn Provider>;
+    providers: DashMap<String, Arc<dyn Provider<S>>>,
 }
 
-pub struct ServiceRegistry<S: Sync + Send> {
-    inner: Arc<ServiceRegistryInner<S>>,
-}
-
-impl<S: Sync + Send> Clone for ServiceRegistry<S> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<S: Sync + Send> ServiceRegistry<S> {
+impl<S: Sync + Send> ProviderRegistry<S> {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(ServiceRegistryInner {
-                services: DashMap::new(),
-            }),
+            providers: DashMap::new(),
         }
     }
-    pub fn register<F: ServiceFactory<S> + 'static>(&mut self, factory: F) {
-        self.inner
-            .services
-            .insert(factory.name().to_owned(), Box::new(factory));
+    pub fn register<P: Provider<S> + 'static>(&mut self, provider: P) {
+        self.providers
+            .insert(provider.name().to_owned(), Arc::new(provider));
     }
-    pub fn get(&self, service_name: &str, session: &Arc<S>) -> Option<Box<dyn Provider>> {
-        self.inner
-            .services
-            .get(service_name)
-            .map(|factory| factory.create(session))
+    pub fn get(&self, service_name: &str) -> Option<Arc<dyn Provider<S>>> {
+        self.providers.get(service_name).map(|arc| arc.clone())
     }
-}
-
-pub struct ServiceRegistryInner<S: Sync + Send> {
-    services: DashMap<String, Box<dyn ServiceFactory<S>>>,
 }
