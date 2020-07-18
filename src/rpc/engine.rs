@@ -8,10 +8,10 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use tokio::sync::oneshot;
 
-use crate::service::{Provider, ConsumerError, ProviderError};
+use crate::service::{ConsumerError, Provider, ProviderError};
 
 use super::message::{ErrorKind, Message};
-use super::transport::Transport;
+use super::transport::{FrameError, FrameHandler, Transport};
 
 pub struct Response {
     is_broadcast: bool,
@@ -33,19 +33,10 @@ impl Future for Response {
     }
 }
 
-pub struct Engine {
-    inner: Arc<EngineInner>,
-}
-
-impl Clone for Engine {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-pub struct EngineInner {
+pub struct Engine
+where
+    Self: Sync + Send,
+{
     provider: Box<dyn Provider + Sync + Send>,
     transport: Box<dyn Transport + Sync + Send>,
     last_message_id: AtomicU64,
@@ -60,15 +51,18 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 }
 
 impl Engine {
-    pub fn new<P: Provider + Sync + Send + 'static, T: Transport + Sync + Send + 'static>(provider: P, transport: T) -> Self {
-        let inner = Arc::new(EngineInner {
+    pub fn new<P: Provider + Sync + Send + 'static, T: Transport + Sync + Send + 'static>(
+        provider: P,
+        transport: T,
+    ) -> Arc<Self> {
+        let this = Arc::new(Engine {
             provider: Box::new(provider),
             transport: Box::new(transport),
             last_message_id: AtomicU64::new(0),
             requests: DashMap::new(),
         });
-        inner.transport.start(EngineRef { inner: Arc::downgrade(&inner) });
-        Self { inner }
+        this.transport.start(Box::new(Arc::downgrade(&this)));
+        this
     }
 
     fn send(&self, frame: Bytes) {
@@ -76,14 +70,14 @@ impl Engine {
         // thus dropped the receiving end of the channel. This is expected
         // behavior when the engine and transport are being terminated and
         // there are still some requests being processed.
-        let _ = self.inner.transport.send(frame);
+        let _ = self.transport.send(frame);
     }
 
     fn next_message_id(&self) -> u64 {
-        self.inner.last_message_id.fetch_add(1, Ordering::Relaxed) + 1
+        self.last_message_id.fetch_add(1, Ordering::Relaxed) + 1
     }
 
-    pub fn notify(&mut self, method_name: &str, data: Bytes) {
+    pub fn notify(&self, method_name: &str, data: Bytes) {
         let message_id = self.next_message_id();
         let header = format!("1 {} {}", message_id, method_name);
         let capacity = header.len() + 1 + data.len();
@@ -95,7 +89,7 @@ impl Engine {
         }
         self.send(buf.into());
     }
-    pub fn request(&mut self, method_name: &str, data: Bytes) -> Response {
+    pub fn request(&self, method_name: &str, data: Bytes) -> Response {
         // FIXME except for the message type this is the exactly the same code
         // as notify.
         let message_id = self.next_message_id();
@@ -109,63 +103,21 @@ impl Engine {
         }
         // prepare back channel
         let (tx, rx) = oneshot::channel();
-        self.inner.requests.insert(message_id, tx);
+        self.requests.insert(message_id, tx);
         self.send(buf.into());
         Response {
             is_broadcast: false,
             result_rx: rx,
         }
     }
-    pub fn handle_frame(&self, data: Bytes) -> Result<(), ()> {
-        let message = Message::parse(data.bytes()).ok_or(())?;
-        println!("Handling frame: {:?}", message);
-        match message {
-            Message::Heartbeat(_heartbeat) => {
-                // XXX ignore heartbeats for now until reliable messaging is implemented
-            }
-            Message::Notification(notification) => {
-                self.handle_request(
-                    None,
-                    notification.service,
-                    notification.method,
-                    _get_data(&data, notification.data),
-                );
-            }
-            Message::Request(request) => {
-                self.handle_request(
-                    Some(request.message_id),
-                    request.service,
-                    request.method,
-                    _get_data(&data, request.data),
-                );
-            }
-            Message::Response(response) => {
-                self.handle_response(
-                    response.request_message_id,
-                    Ok(_get_data(&data, response.data)),
-                );
-            }
-            Message::Error(error) => {
-                self.handle_response(
-                    error.request_message_id,
-                    Err(match error.kind {
-                        // FIXME how do we handle when the server does not understand our message?
-                        ErrorKind::InvalidMessage => ConsumerError::ProviderError,
-                        ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
-                        ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
-                        ErrorKind::ProviderError => ConsumerError::ProviderError,
-                        ErrorKind::Other(other) => ConsumerError::InvalidData(
-                            data.slice((other.as_ptr() as usize - data.as_ptr() as usize)..),
-                        ),
-                    }),
-                );
-            }
-            Message::Disconnect => { /*FIXME implement */ }
-        }
-        Ok(())
-    }
     /// This function is used to handle both notifications and requests
-    fn handle_request(&self, message_id: Option<u64>, service: &str, method: &str, data: Bytes) {
+    fn handle_request(
+        self: &Arc<Self>,
+        message_id: Option<u64>,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) {
         // FIXME add some kind of rate limiting and/or max concurrent requests
         // setting. Otherwise this could easily used for a denial of service
         // attack.
@@ -178,7 +130,7 @@ impl Engine {
                 method,
                 data,
             };
-            match (engine.inner.provider.call(&request).await, message_id) {
+            match (engine.provider.call(&request).await, message_id) {
                 (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                 (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
                 (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
@@ -209,7 +161,7 @@ impl Engine {
     }
     /// This function is used to handle both normal responses and error responses
     fn handle_response(&self, request_message_id: u64, response: Result<Bytes, ConsumerError>) {
-        match self.inner.requests.remove(&request_message_id) {
+        match self.requests.remove(&request_message_id) {
             Some((_, tx)) => {
                 // If the caller is no longer interrested in the response
                 // it can drop the `Response` object which causes this channel
@@ -224,18 +176,73 @@ impl Engine {
     }
 }
 
-impl EngineInner {
+impl Engine {
     fn shutdown(&self) {
         // FIXME stop the possibly running transport
         self.requests.clear();
+        // self.transport.stop();
     }
 }
 
-impl Drop for EngineInner {
+impl Drop for Engine {
     fn drop(&mut self) {
         // Clear requests HashMap causing all channels to be closed.
         self.shutdown();
         println!("Engine dropped.");
+    }
+}
+
+impl FrameHandler for Weak<Engine> {
+    fn handle_frame(&self, data: Bytes) -> Result<(), FrameError> {
+        let engine = self.upgrade().ok_or(FrameError::HandlerGone)?;
+        let message = Message::parse(data.bytes()).ok_or(FrameError::ParseError)?;
+        println!("Handling frame: {:?}", message);
+        match message {
+            Message::Heartbeat(_heartbeat) => {
+                // XXX ignore heartbeats for now until reliable messaging is implemented
+            }
+            Message::Notification(notification) => {
+                engine.handle_request(
+                    None,
+                    notification.service,
+                    notification.method,
+                    _get_data(&data, notification.data),
+                );
+            }
+            Message::Request(request) => {
+                engine.handle_request(
+                    Some(request.message_id),
+                    request.service,
+                    request.method,
+                    _get_data(&data, request.data),
+                );
+            }
+            Message::Response(response) => {
+                engine.handle_response(
+                    response.request_message_id,
+                    Ok(_get_data(&data, response.data)),
+                );
+            }
+            Message::Error(error) => {
+                engine.handle_response(
+                    error.request_message_id,
+                    Err(match error.kind {
+                        // FIXME how do we handle when the server does not understand our message?
+                        ErrorKind::InvalidMessage => ConsumerError::ProviderError,
+                        ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
+                        ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
+                        ErrorKind::ProviderError => ConsumerError::ProviderError,
+                        ErrorKind::Other(other) => ConsumerError::InvalidData(
+                            data.slice((other.as_ptr() as usize - data.as_ptr() as usize)..),
+                        ),
+                    }),
+                );
+            }
+            Message::Disconnect => {
+                engine.shutdown();
+            }
+        }
+        Ok(())
     }
 }
 
@@ -275,7 +282,7 @@ mod tests {
     async fn engine_response() {
         let provider = NoneProvider {};
         let (transport, mut remote) = bidi_channel();
-        let mut engine = Engine::new(provider, transport);
+        let engine = Engine::new(provider, transport);
         let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
         assert_eq!(
             remote.recv().await.unwrap(),
@@ -309,7 +316,7 @@ mod tests {
                 Err(_) => Err(TransportError::Disconnected),
             }
         }
-        fn start(&self, engine: EngineRef) {
+        fn start(&self, engine: Box<dyn FrameHandler>) {
             let mut rx = self.rx.try_lock().unwrap().take().unwrap();
             tokio::spawn(async move {
                 while let Some(frame) = rx.recv().await {
@@ -343,24 +350,5 @@ mod tests {
             },
             Remote { tx: tx1, rx: rx0 },
         )
-    }
-}
-
-
-pub struct EngineRef {
-    inner: Weak<EngineInner>,
-}
-
-impl EngineRef {
-    pub fn upgrade(&self) -> Option<Engine> {
-        Some(Engine {
-            inner: self.inner.upgrade()?
-        })
-    }
-    pub fn handle_frame(&self, data: Bytes) -> Result<(), ()> {
-        match self.upgrade() {
-            Some(engine) => engine.handle_frame(data),
-            None => Err(()),
-        }
     }
 }

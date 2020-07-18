@@ -13,8 +13,7 @@ use tokio::sync::mpsc;
 use websocket_codec::{Message, Opcode};
 
 use super::session::{Auth, AuthError};
-use crate::rpc::engine::EngineRef;
-use crate::rpc::transport::{Transport, TransportError};
+use crate::rpc::transport::{FrameError, FrameHandler, Transport, TransportError};
 
 pub struct WebsocketTransport {
     tx: mpsc::UnboundedSender<Message>,
@@ -39,7 +38,7 @@ impl Transport for WebsocketTransport {
     }
     ///
     /// Important: This methods panics if start() has already been called.
-    fn start(&self, engine: EngineRef) {
+    fn start(&self, frame_handler: Box<dyn FrameHandler>) {
         let (client, rx) = self
             .client
             .try_lock()
@@ -48,7 +47,7 @@ impl Transport for WebsocketTransport {
             .expect("Transport::start() must only be called once.");
         let (sink, stream) = client.split();
         let sender_fut = sender(sink, rx);
-        let receiver_fut = receiver(stream, self.tx.clone(), engine);
+        let receiver_fut = receiver(stream, self.tx.clone(), frame_handler);
         tokio::spawn(async move {
             tokio::join!(sender_fut, receiver_fut);
         });
@@ -72,7 +71,7 @@ async fn sender(
 async fn receiver(
     mut stream: SplitStream<AsyncClient>,
     tx: mpsc::UnboundedSender<Message>,
-    engine: EngineRef,
+    frame_handler: Box<dyn FrameHandler>,
 ) {
     loop {
         match stream.next().await {
@@ -84,14 +83,19 @@ async fn receiver(
                     }
                 }
                 Opcode::Binary | Opcode::Text => {
-                    if engine.handle_frame(message.into_data()).is_err() {
-                        // Be polite. Send a close message. If the sender is already gone
-                        // this is nothing unusual and to be expected.
-                        let _ = tx.send(Message::close(Some((
-                            1,
-                            "Unable to parse frame".to_string(),
-                        ))));
-                        break;
+                    // FIXME log an error when the frame handler fails?
+                    match frame_handler.handle_frame(message.into_data()) {
+                        Ok(()) => continue,
+                        Err(FrameError::HandlerGone) => break,
+                        Err(FrameError::ParseError) => {
+                            // Be polite. Send a close message. If the sender is already gone
+                            // this is nothing unusual and to be expected.
+                            let _ = tx.send(Message::close(Some((
+                                1,
+                                "Unable to parse frame".to_string(),
+                            ))));
+                            break;
+                        }
                     }
                 }
                 Opcode::Close => break,
@@ -99,7 +103,7 @@ async fn receiver(
             },
             Some(Err(e)) => {
                 println!("Transport error while receiving: {}", e);
-                return;
+                break;
             }
             None => break,
         }

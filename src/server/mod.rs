@@ -6,9 +6,9 @@ use crate::rpc::transport::Transport;
 use crate::service::ServiceRegistry;
 use session::{Auth, AuthError, SessionHandler};
 
+pub mod connection;
 pub mod hyper;
 pub mod session;
-pub mod connection;
 
 use connection::Connection;
 

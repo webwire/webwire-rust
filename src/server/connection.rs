@@ -29,7 +29,7 @@ where
 {
     session: Arc<S>,
     server: Server<S>,
-    engine: Engine,
+    engine: Arc<Engine>,
 }
 
 impl<S: Sync + Send + 'static> Connection<S> {

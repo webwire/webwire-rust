@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use dashmap::DashMap;
 
-
 #[derive(Debug)]
 pub enum ProviderError {
     ServiceNotFound,
@@ -62,7 +61,10 @@ pub trait Provider: Sync + Send {
     async fn call(&self, request: &Request) -> Result<Bytes, ProviderError>;
 }
 
-pub trait ServiceFactory<S: Sync + Send> where Self: Sync + Send {
+pub trait ServiceFactory<S: Sync + Send>
+where
+    Self: Sync + Send,
+{
     fn name(&self) -> &'static str;
     fn create(&self, session: &Arc<S>) -> Box<dyn Provider>;
 }
@@ -88,14 +90,12 @@ impl<S: Sync + Send> ServiceRegistry<S> {
         }
     }
     pub fn register<F: ServiceFactory<S> + 'static>(&mut self, factory: F) {
-        self
-            .inner
+        self.inner
             .services
             .insert(factory.name().to_owned(), Box::new(factory));
     }
     pub fn get(&self, service_name: &str, session: &Arc<S>) -> Option<Box<dyn Provider>> {
-        self
-            .inner
+        self.inner
             .services
             .get(service_name)
             .map(|factory| factory.create(session))
