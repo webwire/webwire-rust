@@ -256,7 +256,7 @@ impl FrameHandler for Weak<Engine> {
     }
 }
 
-pub trait EngineListener : Provider {
+pub trait EngineListener: Provider {
     fn shutdown(&self);
 }
 

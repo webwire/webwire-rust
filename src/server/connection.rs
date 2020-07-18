@@ -34,7 +34,12 @@ where
 }
 
 impl<S: Sync + Send + 'static> Connection<S> {
-    pub fn new<T: Transport + 'static>(id: usize, server: Server<S>, transport: T, session: S) -> Self {
+    pub fn new<T: Transport + 'static>(
+        id: usize,
+        server: Server<S>,
+        transport: T,
+        session: S,
+    ) -> Self {
         let session = Arc::new(session);
         let inner = Arc::new(ConnectionInner {
             id,
