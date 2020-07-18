@@ -46,4 +46,5 @@ impl std::error::Error for FrameError {}
 pub trait FrameHandler: Sync + Send {
     /// Handle an incoming frame
     fn handle_frame(&self, frame: Bytes) -> Result<(), FrameError>;
+    fn handle_disconnect(&self);
 }

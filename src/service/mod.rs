@@ -29,7 +29,7 @@ pub enum ConsumerError {
     Disconnected,
 }
 
-pub struct Request<T=Bytes, S=()> {
+pub struct Request<T = Bytes, S = ()> {
     pub service: String,
     pub method: String,
     pub data: T,
@@ -53,12 +53,12 @@ impl ProviderError {
 }
 
 #[async_trait]
-pub trait Consumer<T=Bytes> {
+pub trait Consumer<T = Bytes> {
     async fn call(&self, request: &Request) -> Result<Bytes, ConsumerError>;
 }
 
 #[async_trait]
-pub trait Provider<T=Bytes, S=()>: Sync + Send {
+pub trait Provider<T = Bytes, S = ()>: Sync + Send {
     async fn call(&self, request: &Request) -> Result<Bytes, ProviderError>;
 }
 

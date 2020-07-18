@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 
 use super::Server;
-use crate::rpc::engine::Engine;
+use crate::rpc::engine::{Engine, EngineListener};
 use crate::rpc::transport::Transport;
 use crate::service::{Provider, ProviderError, Request};
 
@@ -27,20 +27,24 @@ pub struct ConnectionInner<S: Sync + Send>
 where
     Self: Sync + Send,
 {
+    id: usize,
     session: Arc<S>,
     server: Server<S>,
     engine: Arc<Engine>,
 }
 
 impl<S: Sync + Send + 'static> Connection<S> {
-    pub fn new<T: Transport + 'static>(server: Server<S>, transport: T, session: S) -> Self {
+    pub fn new<T: Transport + 'static>(id: usize, server: Server<S>, transport: T, session: S) -> Self {
         let session = Arc::new(session);
         let inner = Arc::new(ConnectionInner {
-            session: session.clone(),
+            id,
+            session,
             server: server.clone(),
             engine: Arc::new(Engine::new(transport)),
         });
-        inner.engine.start(Arc::downgrade(&inner) as Weak<dyn Provider + Sync + Send>);
+        inner
+            .engine
+            .start(Arc::downgrade(&inner) as Weak<dyn EngineListener + Sync + Send>);
         Self { inner }
     }
 }
@@ -55,5 +59,11 @@ impl<S: Sync + Send> Provider for ConnectionInner<S> {
             .ok_or(ProviderError::ServiceNotFound)?
             .call(request)
             .await
+    }
+}
+
+impl<S: Sync + Send + 'static> EngineListener for ConnectionInner<S> {
+    fn shutdown(&self) {
+        self.server.clone().disconnect(self.id);
     }
 }

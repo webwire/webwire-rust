@@ -38,7 +38,7 @@ pub struct Engine
 where
     Self: Sync + Send,
 {
-    provider: AtomicWeak<dyn Provider + Sync + Send>,
+    listener: AtomicWeak<dyn EngineListener + Sync + Send>,
     transport: Box<dyn Transport + Sync + Send>,
     last_message_id: AtomicU64,
     requests: DashMap<u64, oneshot::Sender<Result<Bytes, ConsumerError>>>,
@@ -54,15 +54,15 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 impl Engine {
     pub fn new<T: Transport + Sync + Send + 'static>(transport: T) -> Self {
         Engine {
-            provider: AtomicWeak::default(),
+            listener: AtomicWeak::default(),
             transport: Box::new(transport),
             last_message_id: AtomicU64::new(0),
             requests: DashMap::new(),
         }
     }
 
-    pub fn start(self: &Arc<Self>, provider: Weak<dyn Provider + Sync + Send>) {
-        self.provider.replace(provider);
+    pub fn start(self: &Arc<Self>, listener: Weak<dyn EngineListener + Sync + Send>) {
+        self.listener.replace(listener);
         self.transport.start(Box::new(Arc::downgrade(self)));
     }
 
@@ -132,7 +132,7 @@ impl Engine {
                 data,
                 session: (),
             };
-            if let Some(provider) = engine.provider.upgrade() {
+            if let Some(provider) = engine.listener.upgrade() {
                 match (provider.call(&request).await, message_id) {
                     (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
                     (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
@@ -250,6 +250,15 @@ impl FrameHandler for Weak<Engine> {
         }
         Ok(())
     }
+    fn handle_disconnect(&self) {
+        if let Ok(engine) = self.upgrade().ok_or(FrameError::HandlerGone) {
+            engine.shutdown();
+        }
+    }
+}
+
+pub trait EngineListener : Provider {
+    fn shutdown(&self);
 }
 
 #[cfg(test)]
@@ -289,7 +298,7 @@ mod tests {
         let provider = Arc::new(NoneProvider {});
         let (transport, mut remote) = bidi_channel();
         let engine = Arc::new(Engine::new(transport));
-        engine.start(Arc::downgrade(&provider) as Weak<dyn Provider + Sync + Send>);
+        engine.start(Arc::downgrade(&provider) as Weak<dyn EngineListener + Sync + Send>);
         let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
         assert_eq!(
             remote.recv().await.unwrap(),
@@ -301,13 +310,17 @@ mod tests {
         assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
     }
 
-    struct NoneProvider where {}
+    struct NoneProvider {}
 
     #[async_trait]
     impl Provider for NoneProvider {
         async fn call(&self, _request: &crate::service::Request) -> Result<Bytes, ProviderError> {
             Err(ProviderError::ServiceNotFound)
         }
+    }
+
+    impl EngineListener for NoneProvider {
+        fn shutdown(&self) {}
     }
 
     struct FakeTransport {

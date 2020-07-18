@@ -62,7 +62,7 @@ async fn sender(
         if let Err(e) = sink.send(message).await {
             // FIXME
             println!("Transport error while sending: {}", e);
-            return;
+            break;
         }
     }
     // FIXME shutdown receiver, too.
@@ -108,6 +108,7 @@ async fn receiver(
             None => break,
         }
     }
+    frame_handler.handle_disconnect();
 }
 
 async fn on_client<S: Sync + Send + 'static>(
