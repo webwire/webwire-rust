@@ -1,0 +1,33 @@
+[package]
+authors = ["Michael P. Jung <michael.jung@terreon.de>"]
+edition = "2018"
+name = "webwire-rust-example"
+version = "0.1.0"
+
+[dependencies]
+async-trait = "0.1"
+serde_json = "1"
+hyper = "0.13"
+
+[dependencies.serde]
+features = ["derive"]
+version = "1"
+
+[dependencies.uuid]
+features = ["serde"]
+version = "0.8"
+
+[dependencies.tokio]
+version = "0.2"
+features = ["full"]
+
+[dependencies.webwire]
+path = "../../"
+
+[dependencies.api]
+path = "./api"
+
+[workspace]
+members = [
+    "api",
+]
