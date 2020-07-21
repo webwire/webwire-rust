@@ -53,8 +53,8 @@ impl ProviderError {
 
 #[async_trait]
 pub trait Consumer: Sync + Send {
-    fn name(&self) -> &'static str;
-    async fn call(&self, request: &Request, data: Bytes) -> Result<Bytes, ConsumerError>;
+    //fn name(&self) -> &'static str;
+    async fn call(&self, service: &str, method: &str, data: Bytes) -> Result<Bytes, ConsumerError>;
 }
 
 #[async_trait]
