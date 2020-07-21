@@ -14,8 +14,8 @@ code generator for both servers and clients.
 This repository contains the the library for writing clients and
 servers using the Rust programming language.
 
-To learn more about webwire in general please visit the documentation
-repository [webwire/webwire-docs](https://github.com/webwire/webwire-docs).
+To learn more about webwire in general please visit the website:
+[webwire.dev](https://webwire.dev/)
 
 # WORK IN PROGRESS
 
