@@ -29,13 +29,13 @@ pub enum ConsumerError {
     Disconnected,
 }
 
-pub struct Request<S = ()> {
+pub struct Request<S> {
     pub service: String,
     pub method: String,
     pub session: Arc<S>,
 }
 
-pub type Response<E> = Result<Bytes, E>;
+pub type Response<T> = Result<T, ProviderError>;
 
 impl ProviderError {
     pub fn to_bytes(&self) -> Bytes {
