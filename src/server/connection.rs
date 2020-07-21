@@ -72,7 +72,7 @@ impl<S: Session + 'static> EngineListener for ConnectionInner<S> {
             .providers
             .get(&request.service)
             .ok_or(ProviderError::ServiceNotFound)?
-            .call(request, data)
+            .call(&request, data)
             .await
     }
     fn shutdown(&self) {

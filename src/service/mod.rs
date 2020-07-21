@@ -58,9 +58,9 @@ pub trait Consumer: Sync + Send {
 }
 
 #[async_trait]
-pub trait Provider<S = ()>: Sync + Send {
+pub trait Provider<S: Sync + Send>: Sync + Send {
     fn name(&self) -> &'static str;
-    async fn call(&self, request: Request<S>, data: Bytes) -> Result<Bytes, ProviderError>;
+    async fn call(&self, request: &Request<S>, data: Bytes) -> Result<Bytes, ProviderError>;
 }
 
 pub struct ProviderRegistry<S: Sync + Send>
