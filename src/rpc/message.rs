@@ -1,3 +1,6 @@
+//! This module contains the definitions and parsing functions of
+//! the webwire protocol messages.
+
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while_m_n},
@@ -12,68 +15,106 @@ use nom::{
 // plenty though.
 const MAX_SAFE_INTEGER: u64 = 9007199254740991; // = 2^53-1
 
-pub enum InvalidNumber {
+/// This error is returned when parsing fails
+pub enum ParseError {
+    /// A std::num::ParseIntError occured
     ParseIntError(std::num::ParseIntError),
+    /// The maximum value of 9007199254740991 (2^53-1) was exceeded
+    /// while trying to parse a number.
     MaxValueExceeded,
+    /// The method did not contain at least two identifiers
+    /// so a service and method name could be extracted.
+    InvalidServiceMethod,
 }
 
+/// A parsed message
 #[derive(Debug, Eq, PartialEq)]
 pub enum Message<'a> {
+    /// Heartbeat
     Heartbeat(Heartbeat),
+    /// Notification
     Notification(Notification<'a>),
+    /// Request
     Request(Request<'a>),
+    /// Response
     Response(Response<'a>),
+    /// Error
     Error(Error<'a>),
+    /// Disconnect
     Disconnect,
 }
 
+/// A parsed heartbeat message
 #[derive(Debug, Eq, PartialEq)]
 pub struct Heartbeat {
+    /// The ID of the last received message
     pub last_message_id: u64,
 }
 
+/// A parsed notification message
 #[derive(Debug, Eq, PartialEq)]
 pub struct Notification<'a> {
+    /// The ID of this message
     pub message_id: u64,
+    /// The service name this notification is trying to call
     pub service: &'a str,
+    /// The method name this notification is trying to call
     pub method: &'a str,
+    /// The message payload
     pub data: Option<&'a [u8]>,
 }
 
+/// A parsed request message
 #[derive(Debug, Eq, PartialEq)]
 pub struct Request<'a> {
+    /// The ID of this message
     pub message_id: u64,
+    /// The service name this notification is trying to call
     pub service: &'a str,
+    /// The method name this notification is trying to call
     pub method: &'a str,
+    /// The message payload
     pub data: Option<&'a [u8]>,
 }
 
+/// A parsed response message
 #[derive(Debug, Eq, PartialEq)]
 pub struct Response<'a> {
+    /// The ID of this message
     pub message_id: u64,
+    /// The message ID of the request this response belongs to.
     pub request_message_id: u64,
+    /// The message payload
     pub data: Option<&'a [u8]>,
 }
 
+/// A parsed error response message
 #[derive(Debug, Eq, PartialEq)]
 pub struct Error<'a> {
+    /// The ID of this message
     pub message_id: u64,
+    /// The message ID of the request this response belongs to.
     pub request_message_id: u64,
+    /// The error kind
     pub kind: ErrorKind<'a>,
 }
 
+/// A parsed error response
 #[derive(Debug, Eq, PartialEq)]
 pub enum ErrorKind<'a> {
-    InvalidMessage,
+    /// This error is returned if the target service was not found.
     ServiceNotFound,
+    /// This error is returned if the target method was not found.
     MethodNotFound,
-    // This is similar to an "HTTP 500 - Internal Server Error" except that
-    // both client and server can actually respond with it to a request.
+    /// This is similar to an "HTTP 500 - Internal Server Error" except that
+    /// both client and server can actually respond with it to a request.
     ProviderError,
+    /// The remote side responded with an unknown error.
     Other(&'a [u8]),
 }
 
 impl<'a> Message<'a> {
+    /// Parse the given input buffer into a Message object.
     pub fn parse(input: &'a [u8]) -> Option<Self> {
         parse_message(input).ok().map(|t| t.1)
     }
@@ -197,7 +238,7 @@ fn parse_service_method(input: &[u8]) -> IResult<&[u8], (&str, &str)> {
         if parts.len() == 2 {
             Ok((parts[1], parts[0]))
         } else {
-            Err(ErrorKind::InvalidMessage)
+            Err(ParseError::InvalidServiceMethod)
         }
     })(input)
 }
@@ -206,8 +247,8 @@ fn parse_number(input: &[u8]) -> IResult<&[u8], u64> {
     map_res(
         take_while_m_n(1, 16, |c| c >= b'0' && c <= b'9'),
         |s| match u64::from_str_radix(std::str::from_utf8(s).unwrap(), 10) {
-            Ok(value) if value > MAX_SAFE_INTEGER => Err(InvalidNumber::MaxValueExceeded),
-            Err(e) => Err(InvalidNumber::ParseIntError(e)),
+            Ok(value) if value > MAX_SAFE_INTEGER => Err(ParseError::MaxValueExceeded),
+            Err(e) => Err(ParseError::ParseIntError(e)),
             Ok(value) => Ok(value),
         },
     )(input)

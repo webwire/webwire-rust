@@ -1,3 +1,7 @@
+//! This module contains the RPC engine which implements matching
+//! of request and response matching and is the middle layer between
+//! the transport and service layer.
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,12 +13,16 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use dashmap::DashMap;
 use tokio::sync::oneshot;
 
-use crate::service::{ConsumerError, Provider, ProviderError};
+use crate::service::{ConsumerError, ProviderError};
 use crate::utils::AtomicWeak;
 
 use super::message::{ErrorKind, Message};
 use super::transport::{FrameError, FrameHandler, Transport};
 
+/// This response object implements a future that can be polled in order
+/// to wait for the result of a method. It does however not need to be
+/// polled to make progress and shouldn't be polled if it was created as
+/// part of a notification to multiple recipients (broadcast).
 pub struct Response {
     is_broadcast: bool,
     result_rx: oneshot::Receiver<Result<Bytes, ConsumerError>>,
@@ -35,6 +43,8 @@ impl Future for Response {
     }
 }
 
+/// Transport neutral message factory and mapper between requests and
+/// responses. This is the heart of all RPC handling.
 pub struct Engine
 where
     Self: Sync + Send,
@@ -53,6 +63,7 @@ fn _get_data(bytes: &Bytes, slice: Option<&[u8]>) -> Bytes {
 }
 
 impl Engine {
+    /// Create new engine using the given transport.
     pub fn new<T: Transport + Sync + Send + 'static>(transport: T) -> Self {
         Engine {
             listener: AtomicWeak::default(),
@@ -62,11 +73,13 @@ impl Engine {
         }
     }
 
+    /// Start the engine and underlying transport.
     pub fn start(self: &Arc<Self>, listener: Weak<dyn EngineListener + Sync + Send>) {
         self.listener.replace(listener);
         self.transport.start(Box::new(Arc::downgrade(self)));
     }
 
+    /// Send frame to the remote side.
     fn send(&self, frame: Bytes) {
         // If sending fails this means that the sender task has stopped and
         // thus dropped the receiving end of the channel. This is expected
@@ -79,6 +92,7 @@ impl Engine {
         self.last_message_id.fetch_add(1, Ordering::Relaxed) + 1
     }
 
+    /// Send a notification
     pub fn notify(&self, method_name: &str, data: Bytes) {
         let message_id = self.next_message_id();
         let header = format!("1 {} {}", message_id, method_name);
@@ -91,6 +105,8 @@ impl Engine {
         }
         self.send(buf.into());
     }
+
+    /// Send a request
     pub fn request(&self, method_name: &str, data: Bytes) -> Response {
         // FIXME except for the message type this is the exactly the same code
         // as notify.
@@ -112,7 +128,8 @@ impl Engine {
             result_rx: rx,
         }
     }
-    /// This function is used to handle both notifications and requests
+
+    /// Handle requests and notifications which are received from the remote side.
     fn handle_request(
         self: &Arc<Self>,
         message_id: Option<u64>,
@@ -139,7 +156,8 @@ impl Engine {
             }
         });
     }
-    /// This function is used to send both normal responses and error responses
+
+    /// Send response or error to the remote side.
     fn send_response(&self, request_message_id: u64, data: Result<Bytes, ProviderError>) {
         // FIXME this is almost the same code as when sending notifications and requests
         let message_id = self.next_message_id();
@@ -160,7 +178,8 @@ impl Engine {
         }
         self.send(buf.into());
     }
-    /// This function is used to handle both normal responses and error responses
+
+    /// Handle response or error response received from the remote side.
     fn handle_response(&self, request_message_id: u64, response: Result<Bytes, ConsumerError>) {
         match self.requests.remove(&request_message_id) {
             Some((_, tx)) => {
@@ -228,8 +247,6 @@ impl FrameHandler for Weak<Engine> {
                 engine.handle_response(
                     error.request_message_id,
                     Err(match error.kind {
-                        // FIXME how do we handle when the server does not understand our message?
-                        ErrorKind::InvalidMessage => ConsumerError::ProviderError,
                         ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
                         ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
                         ErrorKind::ProviderError => ConsumerError::ProviderError,
@@ -252,14 +269,21 @@ impl FrameHandler for Weak<Engine> {
     }
 }
 
+/// This trait is used by the engine to pass received requests and
+/// notification to the service layer.
 #[async_trait]
 pub trait EngineListener {
+    /// This function is called when the remote side wants to execute
+    /// a function either as part of a notification or request.
     async fn call(
         &self,
         service: String,
         method: String,
         data: Bytes,
     ) -> Result<Bytes, ProviderError>;
+    /// This function is called when the engine is no longer in working
+    /// condition and needs to be shutdown. This especially happens when
+    /// the transport disconnects.
     fn shutdown(&self);
 }
 
@@ -318,9 +342,9 @@ mod tests {
     impl EngineListener for NoneProvider {
         async fn call(
             &self,
-            service: String,
-            method: String,
-            data: Bytes,
+            _service: String,
+            _method: String,
+            _data: Bytes,
         ) -> Result<Bytes, ProviderError> {
             Err(ProviderError::ServiceNotFound)
         }

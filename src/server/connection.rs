@@ -1,3 +1,5 @@
+//! Server connection
+
 use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
@@ -7,8 +9,9 @@ use super::session::Session;
 use super::Server;
 use crate::rpc::engine::{Engine, EngineListener};
 use crate::rpc::transport::Transport;
-use crate::service::{Provider, ProviderError, Request};
+use crate::service::{ProviderError, Request};
 
+/// This is a client currently connected to the server.
 pub struct Connection<S: Session>
 where
     Self: Sync + Send,
@@ -24,7 +27,7 @@ impl<S: Session> Clone for Connection<S> {
     }
 }
 
-pub struct ConnectionInner<S: Session>
+struct ConnectionInner<S: Session>
 where
     Self: Sync + Send,
 {
@@ -35,6 +38,7 @@ where
 }
 
 impl<S: Session + 'static> Connection<S> {
+    /// Create a new connection object using the given `Transport` object.
     pub fn new<T: Transport + 'static>(
         id: usize,
         server: Server<S>,

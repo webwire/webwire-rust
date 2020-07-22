@@ -1,3 +1,5 @@
+//! Server implementation
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -13,6 +15,7 @@ pub mod session;
 use connection::Connection;
 use session::{Auth, AuthError, Session, SessionHandler};
 
+/// The webwire server which is the
 pub struct Server<S: Session> {
     inner: Arc<ServerInner<S>>,
 }
@@ -25,6 +28,8 @@ struct ServerInner<S: Session> {
 }
 
 impl<S: Session + 'static> Server<S> {
+    /// Create a new server object using the given session handler
+    /// and provider registry.
     pub fn new<H: SessionHandler<S> + Sync + Send + 'static>(
         session_handler: H,
         providers: ProviderRegistry<S>,
@@ -38,10 +43,12 @@ impl<S: Session + 'static> Server<S> {
             }),
         }
     }
+    /// This function is called to authenticate connections.
     pub async fn auth(&self, auth: Option<Auth>) -> Result<S, AuthError> {
         println!("Auth!");
-        self.inner.session_handler.connect(auth).await
+        self.inner.session_handler.auth(auth).await
     }
+    /// This function is called when a client connects.
     pub async fn connect<T: Transport + 'static>(&self, transport: T, session: S) {
         println!("Connect!");
         let connection_id = self
@@ -52,6 +59,7 @@ impl<S: Session + 'static> Server<S> {
         let conn = Connection::new(connection_id, self.clone(), transport, session);
         self.inner.connections.insert(connection_id, conn);
     }
+    /// This function is called when a client disconnects.
     pub fn disconnect(&self, connection_id: usize) {
         self.inner.connections.remove(&connection_id);
     }

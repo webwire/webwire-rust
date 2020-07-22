@@ -1,3 +1,5 @@
+//! Hyper support
+
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
@@ -15,12 +17,15 @@ use websocket_codec::{Message, Opcode};
 use super::session::{Auth, AuthError, Session};
 use crate::rpc::transport::{FrameError, FrameHandler, Transport, TransportError};
 
+/// A transport based on a WebSocket connection
 pub struct WebsocketTransport {
     tx: mpsc::UnboundedSender<Message>,
     client: std::sync::Mutex<Option<(AsyncClient, mpsc::UnboundedReceiver<Message>)>>,
 }
 
 impl WebsocketTransport {
+    /// Create new websocket transport using an `AsyncClient` provided by
+    /// the `hyper_websocket_lite` crate.
     pub fn new(client: AsyncClient) -> Self {
         let (tx, rx) = mpsc::unbounded_channel();
         Self {
@@ -162,7 +167,10 @@ where
     })
 }
 
+/// The hyper service returned by `MakeService`.
 pub struct HyperService<S: Session> {
+    /// A ready configured webwire Server object used to handle
+    /// incoming connections and requests.
     pub server: crate::server::Server<S>,
 }
 
@@ -180,7 +188,10 @@ impl<S: Session + 'static> hyper::service::Service<Request<Body>> for HyperServi
     }
 }
 
+/// The `MakeService` used to construct hyper services.
 pub struct MakeHyperService<S: Session> {
+    /// A ready configured webwire Server object used to handle
+    /// incoming connections and requests.
     pub server: crate::server::Server<S>,
 }
 
