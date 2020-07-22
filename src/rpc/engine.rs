@@ -9,14 +9,14 @@ use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 
 use async_trait::async_trait;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::Bytes;
 use dashmap::DashMap;
 use tokio::sync::oneshot;
 
 use crate::service::{ConsumerError, ProviderError};
 use crate::utils::AtomicWeak;
 
-use super::message::{ErrorKind, Message};
+use super::message::{self, ErrorKind, Message};
 use super::transport::{FrameError, FrameHandler, Transport};
 
 /// This response object implements a future that can be polled in order
@@ -93,36 +93,32 @@ impl Engine {
     }
 
     /// Send a notification
-    pub fn notify(&self, method_name: &str, data: Bytes) {
-        let message_id = self.next_message_id();
-        let header = format!("1 {} {}", message_id, method_name);
-        let capacity = header.len() + 1 + data.len();
-        let mut buf = BytesMut::with_capacity(capacity);
-        buf.put(header.as_bytes());
-        if !data.is_empty() {
-            buf.put_slice(b" ");
-            buf.put(data);
-        }
-        self.send(buf.into());
+    pub fn notify(&self, service: &str, method: &str, data: Bytes) {
+        let message = message::Request {
+            is_notification: true,
+            message_id: self.next_message_id(),
+            service: service.to_owned(),
+            method: method.to_owned(),
+            data,
+        };
+        self.send(message.to_bytes());
     }
 
     /// Send a request
-    pub fn request(&self, method_name: &str, data: Bytes) -> Response {
+    pub fn request(&self, service: &str, method: &str, data: Bytes) -> Response {
         // FIXME except for the message type this is the exactly the same code
         // as notify.
-        let message_id = self.next_message_id();
-        let header = format!("2 {} {}", message_id, method_name);
-        let capacity = header.len() + 1 + data.len();
-        let mut buf = BytesMut::with_capacity(capacity);
-        buf.put(header.as_bytes());
-        if !data.is_empty() {
-            buf.put_slice(b" ");
-            buf.put(data);
-        }
+        let message = message::Request {
+            is_notification: false,
+            message_id: self.next_message_id(),
+            service: service.to_owned(),
+            method: method.to_owned(),
+            data,
+        };
         // prepare back channel
         let (tx, rx) = oneshot::channel();
-        self.requests.insert(message_id, tx);
-        self.send(buf.into());
+        self.requests.insert(message.message_id, tx);
+        self.send(message.to_bytes());
         Response {
             is_broadcast: false,
             result_rx: rx,
@@ -130,26 +126,23 @@ impl Engine {
     }
 
     /// Handle requests and notifications which are received from the remote side.
-    fn handle_request(
-        self: &Arc<Self>,
-        message_id: Option<u64>,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    ) {
+    fn handle_request(self: &Arc<Self>, request: message::Request) {
         // FIXME add some kind of rate limiting and/or max concurrent requests
         // setting. Otherwise this could easily used for a denial of service
         // attack.
         let engine = self.clone();
-        let service = service.to_owned();
-        let method = method.to_owned();
         tokio::spawn(async move {
             if let Some(provider) = engine.listener.upgrade() {
-                match (provider.call(service, method, data).await, message_id) {
-                    (Ok(data), Some(message_id)) => engine.send_response(message_id, Ok(data)),
-                    (Err(error), Some(message_id)) => engine.send_response(message_id, Err(error)),
-                    (Ok(_), None) => println!("Response for notification ready. Ignoring it."),
-                    (Err(_), None) => println!("Error for notification ready. Ignoring it."),
+                match (
+                    provider
+                        .call(request.service, request.method, request.data)
+                        .await,
+                    request.is_notification,
+                ) {
+                    (Ok(data), false) => engine.send_response(request.message_id, Ok(data)),
+                    (Err(error), false) => engine.send_response(request.message_id, Err(error)),
+                    (Ok(_), true) => println!("Response for notification ready. Ignoring it."),
+                    (Err(_), true) => println!("Error for notification ready. Ignoring it."),
                 }
             } else {
                 println!("Provider not set. Did you forget to call Engine::start?");
@@ -160,34 +153,30 @@ impl Engine {
     /// Send response or error to the remote side.
     fn send_response(&self, request_message_id: u64, data: Result<Bytes, ProviderError>) {
         // FIXME this is almost the same code as when sending notifications and requests
-        let message_id = self.next_message_id();
-        let header = match data {
-            Ok(_) => format!("3 {} {}", message_id, request_message_id),
-            Err(_) => format!("4 {} {}", message_id, request_message_id),
+        let message = message::Response {
+            message_id: self.next_message_id(),
+            request_message_id: request_message_id,
+            // FIXME implement proper mapping of ProviderError to ErrorKind
+            data: data.map_err(|e| message::ErrorKind::Other(e.to_bytes())),
         };
-        let data = match data {
-            Ok(data) => data,
-            Err(err) => err.to_bytes(),
-        };
-        let capacity = header.len() + 1 + data.len();
-        let mut buf = BytesMut::with_capacity(capacity);
-        buf.put(header.as_bytes());
-        if !data.is_empty() {
-            buf.put_slice(b" ");
-            buf.put_slice(&data);
-        }
-        self.send(buf.into());
+        self.send(message.to_bytes());
     }
 
     /// Handle response or error response received from the remote side.
-    fn handle_response(&self, request_message_id: u64, response: Result<Bytes, ConsumerError>) {
-        match self.requests.remove(&request_message_id) {
+    fn handle_response(&self, response: message::Response) {
+        match self.requests.remove(&response.request_message_id) {
             Some((_, tx)) => {
+                let data = response.data.map_err(|kind| match kind {
+                    ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
+                    ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
+                    ErrorKind::ProviderError => ConsumerError::ProviderError,
+                    ErrorKind::Other(other) => ConsumerError::InvalidData(other),
+                });
                 // If the caller is no longer interrested in the response
                 // it can drop the `Response` object which causes this channel
                 // to be closed. This is to be expected and therefore a failing
                 // send is simply ignored.
-                let _ = tx.send(response);
+                let _ = tx.send(data);
             }
             None => {
                 // FIXME log missing request id
@@ -215,46 +204,17 @@ impl Drop for Engine {
 impl FrameHandler for Weak<Engine> {
     fn handle_frame(&self, data: Bytes) -> Result<(), FrameError> {
         let engine = self.upgrade().ok_or(FrameError::HandlerGone)?;
-        let message = Message::parse(data.bytes()).ok_or(FrameError::ParseError)?;
+        let message = Message::parse(&data).ok_or(FrameError::ParseError)?;
         println!("Handling frame: {:?}", message);
         match message {
             Message::Heartbeat(_heartbeat) => {
                 // XXX ignore heartbeats for now until reliable messaging is implemented
             }
-            Message::Notification(notification) => {
-                engine.handle_request(
-                    None,
-                    notification.service,
-                    notification.method,
-                    _get_data(&data, notification.data),
-                );
-            }
             Message::Request(request) => {
-                engine.handle_request(
-                    Some(request.message_id),
-                    request.service,
-                    request.method,
-                    _get_data(&data, request.data),
-                );
+                engine.handle_request(request);
             }
             Message::Response(response) => {
-                engine.handle_response(
-                    response.request_message_id,
-                    Ok(_get_data(&data, response.data)),
-                );
-            }
-            Message::Error(error) => {
-                engine.handle_response(
-                    error.request_message_id,
-                    Err(match error.kind {
-                        ErrorKind::ServiceNotFound => ConsumerError::ServiceNotFound,
-                        ErrorKind::MethodNotFound => ConsumerError::MethodNotFound,
-                        ErrorKind::ProviderError => ConsumerError::ProviderError,
-                        ErrorKind::Other(other) => ConsumerError::InvalidData(
-                            data.slice((other.as_ptr() as usize - data.as_ptr() as usize)..),
-                        ),
-                    }),
-                );
+                engine.handle_response(response);
             }
             Message::Disconnect => {
                 engine.shutdown();
@@ -325,15 +285,15 @@ mod tests {
         let (transport, mut remote) = bidi_channel();
         let engine = Arc::new(Engine::new(transport));
         engine.start(Arc::downgrade(&provider) as Weak<dyn EngineListener + Sync + Send>);
-        let response = engine.request("get_answer", Bytes::copy_from_slice(b""));
+        let response = engine.request("Test", "get_answer", Bytes::from(""));
         assert_eq!(
             remote.recv().await.unwrap(),
-            Bytes::copy_from_slice(b"2 1 get_answer")
+            Bytes::copy_from_slice(b"2 1 Test.get_answer")
         );
         println!("Sending response...");
         remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
         println!("Waiting for response...");
-        assert_eq!(response.await.unwrap(), Bytes::copy_from_slice(b"42"));
+        assert_eq!(response.await.unwrap(), Bytes::from("42"));
     }
 
     struct NoneProvider {}
