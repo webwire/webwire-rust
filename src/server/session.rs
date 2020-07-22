@@ -92,7 +92,7 @@ pub struct DefaultSessionHandler<S: Default + Send + Sync> {
 }
 
 impl<S: Default + Send + Sync> DefaultSessionHandler<S> {
-    /// Create a new session
+    /// Create a new `DefaultSessionHandler`
     pub fn new() -> Self {
         Self {
             _phantom: std::marker::PhantomData::default(),
