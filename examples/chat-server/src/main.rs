@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
@@ -6,11 +7,12 @@ use ::api::chat;
 use ::api::chat::Client;
 
 use ::webwire::server::hyper::MakeHyperService;
-use ::webwire::{DefaultSessionHandler, ProviderError, ProviderRegistry, Response};
+use ::webwire::server::session::{Auth, AuthError};
+use ::webwire::{DefaultSessionHandler, ProviderError, Response, Router};
 
-type Request = webwire::Request<Session>;
-
-struct ChatService {}
+struct ChatService {
+    session: Arc<Session>,
+}
 
 impl ChatService {
     fn send_message(&self, message: &chat::Message) {
@@ -33,11 +35,7 @@ impl ChatService {
 
 #[async_trait]
 impl chat::Server<Session> for ChatService {
-    async fn send(
-        &self,
-        request: &Request,
-        data: &chat::Message,
-    ) -> Response<Result<(), chat::SendError>> {
+    async fn send(&self, data: &chat::Message) -> Response<Result<(), chat::SendError>> {
         self.send_message(data);
         Ok(Ok(()))
     }
@@ -45,8 +43,6 @@ impl chat::Server<Session> for ChatService {
 
 #[derive(Default)]
 struct Session {}
-
-impl webwire::Session for Session {}
 
 struct Sessions {}
 
@@ -56,9 +52,13 @@ impl Sessions {
     }
 }
 
+#[async_trait]
 impl webwire::SessionHandler<Session> for Sessions {
-    async fn connect(&self, auth: Option<Auth>) -> Result<S, AuthError>;
-    async fn disconnect(&self, session: S);
+    async fn auth(&self, auth: Option<Auth>) -> Result<Session, AuthError> {
+        Ok(Session::default())
+    }
+    async fn connect(&self, session: &Session) {}
+    async fn disconnect(&self, session: &Session) {}
 }
 
 #[tokio::main]
@@ -67,11 +67,11 @@ async fn main() {
     let session_handler = Sessions::new();
 
     // Create services
-    let mut providers = ProviderRegistry::<Session>::new();
-    providers.register(chat::ServerProvider::new(ChatService {}));
+    let mut router = Router::<Session>::new();
+    router.service(chat::ServerProvider(|session| ChatService { session }));
 
     // Create webwire server
-    let server = webwire::server::Server::new(session_handler, providers);
+    let server = webwire::server::Server::new(session_handler, router);
 
     // Start hyper service
     let addr = SocketAddr::from(([127, 0, 0, 1], 2323));

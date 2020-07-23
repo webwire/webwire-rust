@@ -15,6 +15,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "futures",
  "serde",
  "serde_json",
  "uuid",
