@@ -6,40 +6,40 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use crate::rpc::transport::Transport;
-use crate::service::ProviderRegistry;
+use crate::service::Router;
 
 pub mod connection;
 pub mod hyper;
 pub mod session;
 
 use connection::Connection;
-use session::{Auth, AuthError, Session, SessionHandler};
+use session::{Auth, AuthError, SessionHandler};
 
 /// The webwire server which is the
-pub struct Server<S: Session> {
+pub struct Server<S: Sync + Send> {
     inner: Arc<ServerInner<S>>,
 }
 
-struct ServerInner<S: Session> {
+struct ServerInner<S: Sync + Send> {
     last_connection_id: AtomicUsize,
     connections: DashMap<usize, Connection<S>>,
-    providers: ProviderRegistry<S>,
+    router: Router<S>,
     session_handler: Box<dyn SessionHandler<S> + Sync + Send>,
 }
 
-impl<S: Session + 'static> Server<S> {
+impl<S: Sync + Send + 'static> Server<S> {
     /// Create a new server object using the given session handler
     /// and provider registry.
     pub fn new<H: SessionHandler<S> + Sync + Send + 'static>(
         session_handler: H,
-        providers: ProviderRegistry<S>,
+        router: Router<S>,
     ) -> Self {
         Self {
             inner: Arc::new(ServerInner {
                 last_connection_id: AtomicUsize::new(0),
                 connections: DashMap::new(),
                 session_handler: Box::new(session_handler),
-                providers,
+                router,
             }),
         }
     }
@@ -65,7 +65,7 @@ impl<S: Session + 'static> Server<S> {
     }
 }
 
-impl<S: Session + 'static> Clone for Server<S> {
+impl<S: Sync + Send + 'static> Clone for Server<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),

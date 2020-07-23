@@ -14,7 +14,7 @@ use hyper_websocket_lite::{server_upgrade, AsyncClient};
 use tokio::sync::mpsc;
 use websocket_codec::{Message, Opcode};
 
-use super::session::{Auth, AuthError, Session};
+use super::session::{Auth, AuthError};
 use crate::rpc::transport::{FrameError, FrameHandler, Transport, TransportError};
 
 /// A transport based on a WebSocket connection
@@ -116,7 +116,7 @@ async fn receiver(
     frame_handler.handle_disconnect();
 }
 
-async fn on_client<S: Session + 'static>(
+async fn on_client<S: Sync + Send + 'static>(
     client: AsyncClient,
     server: super::Server<S>,
     session: S,
@@ -130,7 +130,7 @@ async fn upgrade<S>(
     server: super::Server<S>,
 ) -> Result<Response<Body>, Infallible>
 where
-    S: Session + 'static,
+    S: Sync + Send + 'static,
 {
     let auth = match request.headers().get(hyper::header::AUTHORIZATION) {
         Some(value) => Some(Auth::parse(value.as_bytes())),
@@ -168,13 +168,13 @@ where
 }
 
 /// The hyper service returned by `MakeService`.
-pub struct HyperService<S: Session> {
+pub struct HyperService<S: Sync + Send> {
     /// A ready configured webwire Server object used to handle
     /// incoming connections and requests.
     pub server: crate::server::Server<S>,
 }
 
-impl<S: Session + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
+impl<S: Sync + Send + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
     type Response = Response<Body>;
     type Error = Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
@@ -189,13 +189,13 @@ impl<S: Session + 'static> hyper::service::Service<Request<Body>> for HyperServi
 }
 
 /// The `MakeService` used to construct hyper services.
-pub struct MakeHyperService<S: Session> {
+pub struct MakeHyperService<S: Sync + Send> {
     /// A ready configured webwire Server object used to handle
     /// incoming connections and requests.
     pub server: crate::server::Server<S>,
 }
 
-impl<S: Session + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
+impl<S: Sync + Send + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
     type Response = HyperService<S>;
     type Error = http::Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;

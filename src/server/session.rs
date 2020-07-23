@@ -5,10 +5,6 @@ use std::fmt;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-/// This marker trait does not contain any functions and just
-/// requires the actual session to be `Sync + Send`.
-pub trait Session: Sync + Send {}
-
 /// A parsed version of the `Authorization` header
 pub enum Auth {
     /// User name + Password
@@ -16,7 +12,7 @@ pub enum Auth {
         /// User name
         username: String,
         /// Password
-        password: String
+        password: String,
     },
     /// API Key
     Key(String),
@@ -29,7 +25,7 @@ pub enum Auth {
         /// ID of the session to be continued
         id: Uuid,
         /// The last message the client has processed
-        last_message_id: u64
+        last_message_id: u64,
     },
     /// Another authentication scheme was used.
     Other(String, String),

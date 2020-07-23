@@ -1,5 +1,8 @@
 //! Service consumer
 
+use std::future::Future;
+use std::pin::Pin;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 
@@ -8,7 +11,17 @@ use bytes::Bytes;
 #[async_trait]
 pub trait Consumer: Sync + Send {
     /// Call service method
-    async fn call(&self, service: &str, method: &str, data: Bytes) -> Result<Bytes, ConsumerError>;
+    async fn call(
+        &self,
+        method: &str,
+        data: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ConsumerError>> + Send>>;
+}
+
+/// This trait adds a service name to the service consumer.
+pub trait NamedProvider: Consumer {
+    /// Name of the consumed service
+    const NAME: &'static str;
 }
 
 /// Error returned by the `Consumer::call` method

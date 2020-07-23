@@ -1,28 +1,30 @@
 //! Service provider
 
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use bytes::Bytes;
-use dashmap::DashMap;
+use futures::future::ready;
 
-/// The generic provider trait implemented by the generated code.
-#[async_trait]
+/// Service provider
 pub trait Provider<S: Sync + Send>: Sync + Send {
-    /// Returns the name of the service
-    fn name(&self) -> &'static str;
+    //fn name(&self) -> &'static str;
     /// Call a method of this service
-    async fn call(&self, request: &Request<S>, data: Bytes) -> Result<Bytes, ProviderError>;
+    fn call(
+        &self,
+        session: &Arc<S>,
+        method: &str,
+        data: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>>;
 }
 
-/// The request object used to call providers.
-pub struct Request<S> {
-    /// Service name
-    pub service: String,
-    /// Method name
-    pub method: String,
-    /// Session
-    pub session: Arc<S>,
+/// This trait adds a service name to the service provider
+/// which is used for the router.
+pub trait NamedProvider<S: Sync + Send>: Provider<S> {
+    /// Name of the provided service
+    const NAME: &'static str;
 }
 
 /// The response type used when calling providers.
@@ -59,28 +61,37 @@ impl ProviderError {
     }
 }
 
-/// Registry for providers
-pub struct ProviderRegistry<S: Sync + Send>
-where
-    Self: Sync + Send,
-{
-    providers: DashMap<String, Arc<dyn Provider<S>>>,
+/// The router is used to register service provider and dispatch
+/// requests.
+pub struct Router<S: Sync + Send> {
+    services: HashMap<String, Box<dyn Provider<S>>>,
 }
 
-impl<S: Sync + Send> ProviderRegistry<S> {
-    /// Create new provider registry
+impl<S: Sync + Send> Router<S> {
+    /// Create an empty router
     pub fn new() -> Self {
         Self {
-            providers: DashMap::new(),
+            services: HashMap::new(),
         }
     }
-    /// Register a provider
-    pub fn register<P: Provider<S> + 'static>(&mut self, provider: P) {
-        self.providers
-            .insert(provider.name().to_owned(), Arc::new(provider));
+    /// Add service provider to this router
+    pub fn service<P>(&mut self, provider: P)
+    where
+        P: NamedProvider<S> + 'static,
+    {
+        self.services.insert(P::NAME.to_owned(), Box::new(provider));
     }
-    /// Get provider by name
-    pub fn get(&self, service_name: &str) -> Option<Arc<dyn Provider<S>>> {
-        self.providers.get(service_name).map(|arc| arc.clone())
+    /// Call a service
+    pub fn call(
+        &self,
+        session: &Arc<S>,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>> {
+        match self.services.get(service) {
+            Some(provider) => provider.call(session, method, data),
+            None => Box::pin(ready(Err(ProviderError::ServiceNotFound))),
+        }
     }
 }

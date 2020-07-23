@@ -9,10 +9,8 @@ pub mod utils;
 
 pub use {
     server::{
-        session::{Session, SessionHandler, DefaultSessionHandler},
+        session::{DefaultSessionHandler, SessionHandler},
         Server,
     },
-    service::{
-        Consumer, ConsumerError, Provider, ProviderError, ProviderRegistry, Request, Response,
-    },
+    service::{Consumer, ConsumerError, NamedProvider, Provider, ProviderError, Response, Router},
 };

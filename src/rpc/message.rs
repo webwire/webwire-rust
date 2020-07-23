@@ -124,12 +124,15 @@ impl Response {
     pub fn to_bytes(&self) -> Bytes {
         let (code, data) = match &self.data {
             Ok(data) => ('3', data.clone()),
-            Err(e) => ('4', match e {
-                ErrorKind::ServiceNotFound => Bytes::from("ServiceNotFound"),
-                ErrorKind::MethodNotFound => Bytes::from("MethodNotFound"),
-                ErrorKind::ProviderError => Bytes::from(""),
-                ErrorKind::Other(data) => data.clone(),
-            })
+            Err(e) => (
+                '4',
+                match e {
+                    ErrorKind::ServiceNotFound => Bytes::from("ServiceNotFound"),
+                    ErrorKind::MethodNotFound => Bytes::from("MethodNotFound"),
+                    ErrorKind::ProviderError => Bytes::from(""),
+                    ErrorKind::Other(data) => data.clone(),
+                },
+            ),
         };
         let header = format!("{} {} {}", code, self.message_id, self.request_message_id);
         let capacity = header.len() + 1 + data.len();

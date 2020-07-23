@@ -8,7 +8,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll};
 
-use async_trait::async_trait;
 use bytes::Bytes;
 use dashmap::DashMap;
 use tokio::sync::oneshot;
@@ -135,7 +134,7 @@ impl Engine {
             if let Some(provider) = engine.listener.upgrade() {
                 match (
                     provider
-                        .call(request.service, request.method, request.data)
+                        .call(&request.service, &request.method, request.data)
                         .await,
                     request.is_notification,
                 ) {
@@ -231,16 +230,15 @@ impl FrameHandler for Weak<Engine> {
 
 /// This trait is used by the engine to pass received requests and
 /// notification to the service layer.
-#[async_trait]
 pub trait EngineListener {
     /// This function is called when the remote side wants to execute
     /// a function either as part of a notification or request.
-    async fn call(
+    fn call(
         &self,
-        service: String,
-        method: String,
+        service: &str,
+        method: &str,
         data: Bytes,
-    ) -> Result<Bytes, ProviderError>;
+    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>>;
     /// This function is called when the engine is no longer in working
     /// condition and needs to be shutdown. This especially happens when
     /// the transport disconnects.
@@ -251,7 +249,7 @@ pub trait EngineListener {
 mod tests {
     use super::*;
     use crate::rpc::transport::TransportError;
-    use async_trait::async_trait;
+    use futures::future::ready;
 
     #[tokio::main]
     #[test]
@@ -298,15 +296,14 @@ mod tests {
 
     struct NoneProvider {}
 
-    #[async_trait]
     impl EngineListener for NoneProvider {
-        async fn call(
+        fn call(
             &self,
-            _service: String,
-            _method: String,
+            _service: &str,
+            _method: &str,
             _data: Bytes,
-        ) -> Result<Bytes, ProviderError> {
-            Err(ProviderError::ServiceNotFound)
+        ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>> {
+            Box::pin(ready(Err(ProviderError::ServiceNotFound)))
         }
         fn shutdown(&self) {}
     }
@@ -316,7 +313,6 @@ mod tests {
         rx: std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<Bytes>>>,
     }
 
-    #[async_trait]
     impl Transport for FakeTransport {
         fn send(&self, frame: Bytes) -> Result<(), TransportError> {
             match self.tx.send(frame) {

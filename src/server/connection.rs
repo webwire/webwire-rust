@@ -1,25 +1,25 @@
 //! Server connection
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
-use async_trait::async_trait;
 use bytes::Bytes;
 
-use super::session::Session;
 use super::Server;
 use crate::rpc::engine::{Engine, EngineListener};
 use crate::rpc::transport::Transport;
-use crate::service::{ProviderError, Request};
+use crate::service::ProviderError;
 
 /// This is a client currently connected to the server.
-pub struct Connection<S: Session>
+pub struct Connection<S: Sync + Send>
 where
     Self: Sync + Send,
 {
     inner: Arc<ConnectionInner<S>>,
 }
 
-impl<S: Session> Clone for Connection<S> {
+impl<S: Sync + Send> Clone for Connection<S> {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -27,7 +27,7 @@ impl<S: Session> Clone for Connection<S> {
     }
 }
 
-struct ConnectionInner<S: Session>
+struct ConnectionInner<S: Sync + Send>
 where
     Self: Sync + Send,
 {
@@ -37,7 +37,7 @@ where
     engine: Arc<Engine>,
 }
 
-impl<S: Session + 'static> Connection<S> {
+impl<S: Sync + Send + 'static> Connection<S> {
     /// Create a new connection object using the given `Transport` object.
     pub fn new<T: Transport + 'static>(
         id: usize,
@@ -58,26 +58,17 @@ impl<S: Session + 'static> Connection<S> {
     }
 }
 
-#[async_trait]
-impl<S: Session + 'static> EngineListener for ConnectionInner<S> {
-    async fn call(
+impl<S: Sync + Send + 'static> EngineListener for ConnectionInner<S> {
+    fn call(
         &self,
-        service: String,
-        method: String,
+        service: &str,
+        method: &str,
         data: Bytes,
-    ) -> Result<Bytes, ProviderError> {
-        let request = Request {
-            service: service,
-            method: method,
-            session: self.session.clone(),
-        };
+    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>> {
         self.server
             .inner
-            .providers
-            .get(&request.service)
-            .ok_or(ProviderError::ServiceNotFound)?
-            .call(&request, data)
-            .await
+            .router
+            .call(&self.session, service, method, data)
     }
     fn shutdown(&self) {
         self.server.clone().disconnect(self.id);
