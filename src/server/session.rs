@@ -96,6 +96,12 @@ impl<S: Default + Send + Sync> DefaultSessionHandler<S> {
     }
 }
 
+impl<S: Default + Send + Sync> Default for DefaultSessionHandler<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl<S: Default + Send + Sync> SessionHandler<S> for DefaultSessionHandler<S> {
     async fn auth(&self, _auth: Option<Auth>) -> Result<S, AuthError> {

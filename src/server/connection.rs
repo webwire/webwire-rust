@@ -47,7 +47,7 @@ impl<S: Sync + Send + 'static> Connection<S> {
         let inner = Arc::new(ConnectionInner {
             id,
             session: Arc::new(session),
-            server: server.clone(),
+            server,
             engine: Arc::new(Engine::new(transport)),
         });
         inner

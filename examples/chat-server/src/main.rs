@@ -48,10 +48,23 @@ struct Session {}
 
 impl webwire::Session for Session {}
 
+struct Sessions {}
+
+impl Sessions {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl webwire::SessionHandler<Session> for Sessions {
+    async fn connect(&self, auth: Option<Auth>) -> Result<S, AuthError>;
+    async fn disconnect(&self, session: S);
+}
+
 #[tokio::main]
 async fn main() {
     // Create session handler
-    let session_handler = DefaultSessionHandler::<Session>::new();
+    let session_handler = Sessions::new();
 
     // Create services
     let mut providers = ProviderRegistry::<Session>::new();

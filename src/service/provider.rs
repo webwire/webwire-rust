@@ -93,3 +93,9 @@ impl<S: Sync + Send> Router<S> {
         }
     }
 }
+
+impl<S: Sync + Send> Default for Router<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
