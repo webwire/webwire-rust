@@ -2,15 +2,13 @@
 //!
 use futures::future::BoxFuture;
 
-use async_trait::async_trait;
 use bytes::Bytes;
 
 /// This trait is implemented by all generic consumers and used by the
 /// generated service code.
-#[async_trait]
 pub trait Consumer: Sync + Send {
     /// Call service method
-    async fn call(&self, method: &str, data: Bytes) -> BoxFuture<Result<Bytes, ConsumerError>>;
+    fn call(&self, method: &str, data: Bytes) -> BoxFuture<Result<Bytes, ConsumerError>>;
 }
 
 /// This trait adds a service name to the service consumer.
