@@ -4,13 +4,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use ::api::chat;
-use ::api::chat::Client;
 
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
-use ::webwire::{DefaultSessionHandler, ProviderError, Response, Router};
+use ::webwire::{Response, Router};
 
 struct ChatService {
+    #[allow(dead_code)]
     session: Arc<Session>,
 }
 
@@ -54,11 +54,11 @@ impl Sessions {
 
 #[async_trait]
 impl webwire::SessionHandler<Session> for Sessions {
-    async fn auth(&self, auth: Option<Auth>) -> Result<Session, AuthError> {
+    async fn auth(&self, _auth: Option<Auth>) -> Result<Session, AuthError> {
         Ok(Session::default())
     }
-    async fn connect(&self, session: &Session) {}
-    async fn disconnect(&self, session: &Session) {}
+    async fn connect(&self, _session: &Session) {}
+    async fn disconnect(&self, _session: &Session) {}
 }
 
 #[tokio::main]
