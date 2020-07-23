@@ -1,10 +1,9 @@
 //! Server connection
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, Weak};
 
 use bytes::Bytes;
+use futures::future::BoxFuture;
 
 use super::Server;
 use crate::rpc::engine::{Engine, EngineListener};
@@ -64,7 +63,7 @@ impl<S: Sync + Send + 'static> EngineListener for ConnectionInner<S> {
         service: &str,
         method: &str,
         data: Bytes,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>> {
+    ) -> BoxFuture<Result<Bytes, ProviderError>> {
         self.server
             .inner
             .router

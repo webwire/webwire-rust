@@ -1,12 +1,10 @@
 //! Service provider
 
 use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::future::ready;
+use futures::future::{ready, BoxFuture};
 
 /// Service provider
 pub trait Provider<S: Sync + Send>: Sync + Send {
@@ -17,7 +15,7 @@ pub trait Provider<S: Sync + Send>: Sync + Send {
         session: &Arc<S>,
         method: &str,
         data: Bytes,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>>;
+    ) -> BoxFuture<Result<Bytes, ProviderError>>;
 }
 
 /// This trait adds a service name to the service provider
@@ -88,7 +86,7 @@ impl<S: Sync + Send> Router<S> {
         service: &str,
         method: &str,
         data: Bytes,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>> {
+    ) -> BoxFuture<Result<Bytes, ProviderError>> {
         match self.services.get(service) {
             Some(provider) => provider.call(session, method, data),
             None => Box::pin(ready(Err(ProviderError::ServiceNotFound))),

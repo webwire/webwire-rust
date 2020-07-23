@@ -1,11 +1,10 @@
 //! Hyper support
 
 use std::convert::Infallible;
-use std::future::Future;
-use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
+use futures::future::BoxFuture;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use hyper::server::conn::AddrStream;
@@ -177,7 +176,7 @@ pub struct HyperService<S: Sync + Send> {
 impl<S: Sync + Send + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
     type Response = Response<Body>;
     type Error = Infallible;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -198,7 +197,7 @@ pub struct MakeHyperService<S: Sync + Send> {
 impl<S: Sync + Send + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
     type Response = HyperService<S>;
     type Error = http::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))

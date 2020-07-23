@@ -10,6 +10,7 @@ use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use dashmap::DashMap;
+use futures::future::BoxFuture;
 use tokio::sync::oneshot;
 
 use crate::service::{ConsumerError, ProviderError};
@@ -238,7 +239,7 @@ pub trait EngineListener {
         service: &str,
         method: &str,
         data: Bytes,
-    ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>>;
+    ) -> BoxFuture<Result<Bytes, ProviderError>>;
     /// This function is called when the engine is no longer in working
     /// condition and needs to be shutdown. This especially happens when
     /// the transport disconnects.
@@ -302,7 +303,7 @@ mod tests {
             _service: &str,
             _method: &str,
             _data: Bytes,
-        ) -> Pin<Box<dyn Future<Output = Result<Bytes, ProviderError>> + Send>> {
+        ) -> BoxFuture<Result<Bytes, ProviderError>> {
             Box::pin(ready(Err(ProviderError::ServiceNotFound)))
         }
         fn shutdown(&self) {}
