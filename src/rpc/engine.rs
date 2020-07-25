@@ -107,8 +107,6 @@ impl Engine {
 
     /// Send a request
     pub fn request(&self, service: &str, method: &str, data: Bytes) -> Response {
-        // FIXME except for the message type this is the exactly the same code
-        // as notify.
         let message = message::Request {
             is_notification: false,
             message_id: self.next_message_id(),
