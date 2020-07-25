@@ -12,6 +12,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
 use tokio::sync::oneshot;
+use log::info;
 
 use crate::service::{ConsumerError, ProviderError};
 use crate::utils::AtomicWeak;
@@ -179,7 +180,7 @@ impl Engine {
                 let _ = tx.send(data);
             }
             None => {
-                // FIXME log missing request id
+                info!(target: "Engine", "Discarding response for which no request exists: request_message_id={}", response.request_message_id);
             }
         }
     }
