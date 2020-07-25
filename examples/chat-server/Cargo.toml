@@ -4,6 +4,11 @@ edition = "2018"
 name = "webwire-rust-example"
 version = "0.1.0"
 
+[workspace]
+members = [
+    'api'
+]
+
 [dependencies]
 async-trait = "0.1"
 serde_json = "1"
@@ -26,8 +31,3 @@ path = "../../"
 
 [dependencies.api]
 path = "./api"
-
-[workspace]
-members = [
-    "api",
-]

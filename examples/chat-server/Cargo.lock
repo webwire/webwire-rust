@@ -937,6 +937,7 @@ dependencies = [
  "futures",
  "hyper",
  "hyper-websocket-lite",
+ "log",
  "nom",
  "serde",
  "serde_json",
