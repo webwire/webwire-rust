@@ -1,6 +1,7 @@
 //! Hyper support
 
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytes::Bytes;
@@ -117,7 +118,7 @@ async fn receiver(
 
 async fn on_client<S: Sync + Send + 'static>(
     client: AsyncClient,
-    server: super::Server<S>,
+    server: Arc<super::Server<S>>,
     session: S,
 ) {
     let transport = WebsocketTransport::new(client);
@@ -126,7 +127,7 @@ async fn on_client<S: Sync + Send + 'static>(
 
 async fn upgrade<S>(
     request: Request<Body>,
-    server: super::Server<S>,
+    server: Arc<super::Server<S>>,
 ) -> Result<Response<Body>, Infallible>
 where
     S: Sync + Send + 'static,
@@ -170,7 +171,7 @@ where
 pub struct HyperService<S: Sync + Send> {
     /// A ready configured webwire Server object used to handle
     /// incoming connections and requests.
-    pub server: crate::server::Server<S>,
+    pub server: Arc<super::Server<S>>,
 }
 
 impl<S: Sync + Send + 'static> hyper::service::Service<Request<Body>> for HyperService<S> {
@@ -191,7 +192,7 @@ impl<S: Sync + Send + 'static> hyper::service::Service<Request<Body>> for HyperS
 pub struct MakeHyperService<S: Sync + Send> {
     /// A ready configured webwire Server object used to handle
     /// incoming connections and requests.
-    pub server: crate::server::Server<S>,
+    pub server: Arc<super::Server<S>>,
 }
 
 impl<S: Sync + Send + 'static> hyper::service::Service<&AddrStream> for MakeHyperService<S> {
