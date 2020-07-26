@@ -35,8 +35,7 @@ impl<S: Sync + Send + 'static> Connection<S> {
             server: Arc::downgrade(server),
             engine: Arc::new(Engine::new(transport)),
         });
-        this
-            .engine
+        this.engine
             .start(Arc::downgrade(&this) as Weak<dyn EngineListener + Sync + Send>);
         this
     }
@@ -50,11 +49,7 @@ impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
         data: Bytes,
     ) -> BoxFuture<Result<Bytes, ProviderError>> {
         match self.server.upgrade() {
-            Some(server) => {
-                server
-                    .router
-                    .call(&self.session, service, method, data)
-            },
+            Some(server) => server.router.call(&self.session, service, method, data),
             None => Box::pin(ready(Err(ProviderError::Shutdown))),
         }
     }

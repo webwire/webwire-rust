@@ -11,8 +11,8 @@ use std::task::{Context, Poll};
 use bytes::Bytes;
 use dashmap::DashMap;
 use futures::future::BoxFuture;
-use tokio::sync::oneshot;
 use log::info;
+use tokio::sync::oneshot;
 
 use crate::service::{ConsumerError, ProviderError};
 use crate::utils::AtomicWeak;
