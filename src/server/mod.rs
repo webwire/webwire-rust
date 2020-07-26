@@ -53,7 +53,7 @@ impl<S: Sync + Send + 'static> Server<S> {
         self.connections.insert(connection_id, conn);
     }
     /// This function is called when a client disconnects.
-    pub fn disconnect(&self, connection_id: usize) {
+    pub fn disconnect(self: &Arc<Self>, connection_id: usize) {
         self.connections.remove(&connection_id);
     }
 }

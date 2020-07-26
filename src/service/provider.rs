@@ -15,7 +15,7 @@ pub trait Provider<S: Sync + Send>: Sync + Send {
         session: &Arc<S>,
         method: &str,
         data: Bytes,
-    ) -> BoxFuture<Result<Bytes, ProviderError>>;
+    ) -> BoxFuture<'static, Result<Bytes, ProviderError>>;
 }
 
 /// This trait adds a service name to the service provider
@@ -92,7 +92,7 @@ impl<S: Sync + Send> Router<S> {
         service: &str,
         method: &str,
         data: Bytes,
-    ) -> BoxFuture<Result<Bytes, ProviderError>> {
+    ) -> BoxFuture<'static, Result<Bytes, ProviderError>> {
         match self.services.get(service) {
             Some(provider) => provider.call(session, method, data),
             None => Box::pin(ready(Err(ProviderError::ServiceNotFound))),

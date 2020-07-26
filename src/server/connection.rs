@@ -17,7 +17,7 @@ where
 {
     id: usize,
     session: Arc<S>,
-    server: Arc<Server<S>>,
+    server: Weak<Server<S>>,
     engine: Arc<Engine>,
 }
 
@@ -32,7 +32,7 @@ impl<S: Sync + Send + 'static> Connection<S> {
         let this = Arc::new(Self {
             id,
             session: Arc::new(session),
-            server: server.clone(),
+            server: Arc::downgrade(server),
             engine: Arc::new(Engine::new(transport)),
         });
         this
@@ -49,11 +49,18 @@ impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
         method: &str,
         data: Bytes,
     ) -> BoxFuture<Result<Bytes, ProviderError>> {
-        self.server
-            .router
-            .call(&self.session, service, method, data)
+        match self.server.upgrade() {
+            Some(server) => {
+                server
+                    .router
+                    .call(&self.session, service, method, data)
+            },
+            None => Box::pin(ready(Err(ProviderError::Shutdown))),
+        }
     }
     fn shutdown(&self) {
-        self.server.disconnect(self.id);
+        if let Some(server) = self.server.upgrade() {
+            server.disconnect(self.id);
+        }
     }
 }
