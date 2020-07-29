@@ -6,7 +6,7 @@ use std::sync::Arc;
 use dashmap::DashMap;
 
 use crate::rpc::transport::Transport;
-use crate::service::Router;
+use crate::service::provider::Provider;
 
 pub mod connection;
 pub mod hyper;
@@ -19,7 +19,7 @@ use session::{Auth, AuthError, SessionHandler};
 pub struct Server<S: Sync + Send> {
     last_connection_id: AtomicUsize,
     connections: DashMap<usize, Arc<Connection<S>>>,
-    router: Router<S>,
+    provider: Arc<dyn Provider<S>>,
     session_handler: Box<dyn SessionHandler<S> + Sync + Send>,
 }
 
@@ -28,13 +28,19 @@ impl<S: Sync + Send + 'static> Server<S> {
     /// and provider registry.
     pub fn new<H: SessionHandler<S> + Sync + Send + 'static>(
         session_handler: H,
-        router: Router<S>,
+        provider: Arc<dyn Provider<S>>,
     ) -> Self {
         Self {
             last_connection_id: AtomicUsize::new(0),
             connections: DashMap::new(),
             session_handler: Box::new(session_handler),
-            router,
+            provider: provider,
+        }
+    }
+    /// Return iterator over all connections.
+    pub fn connections(&self) -> ConnectionIter<S> {
+        ConnectionIter {
+            iter: self.connections.iter(),
         }
     }
     /// This function is called to authenticate connections.
@@ -52,5 +58,26 @@ impl<S: Sync + Send + 'static> Server<S> {
     /// This function is called when a client disconnects.
     pub fn disconnect(self: &Arc<Self>, connection_id: usize) {
         self.connections.remove(&connection_id);
+    }
+}
+
+/// Iterator returned by the `Server::connections()` method
+pub struct ConnectionIter<'a, S>
+where
+    S: Sync + Send,
+{
+    iter: dashmap::iter::Iter<
+        'a,
+        usize,
+        Arc<Connection<S>>,
+        ahash::RandomState,
+        DashMap<usize, Arc<Connection<S>>>,
+    >,
+}
+
+impl<S: Sync + Send> Iterator for ConnectionIter<'_, S> {
+    type Item = Arc<Connection<S>>;
+    fn next(&mut self) -> Option<Arc<Connection<S>>> {
+        self.iter.next().map(|t| t.value().clone())
     }
 }

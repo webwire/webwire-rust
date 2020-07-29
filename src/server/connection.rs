@@ -6,7 +6,7 @@ use bytes::Bytes;
 use futures::future::{ready, BoxFuture};
 
 use super::Server;
-use crate::rpc::engine::{Engine, EngineListener};
+use crate::rpc::engine::{Engine, EngineListener, Response};
 use crate::rpc::transport::Transport;
 use crate::service::ProviderError;
 
@@ -39,6 +39,10 @@ impl<S: Sync + Send + 'static> Connection<S> {
             .start(Arc::downgrade(&this) as Weak<dyn EngineListener + Sync + Send>);
         this
     }
+    /// Call method on remote side
+    pub fn call(&self, service: &str, method: &str, data: Bytes) -> Response {
+        self.engine.request(service, method, data)
+    }
 }
 
 impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
@@ -49,7 +53,7 @@ impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
         data: Bytes,
     ) -> BoxFuture<Result<Bytes, ProviderError>> {
         match self.server.upgrade() {
-            Some(server) => server.router.call(&self.session, service, method, data),
+            Some(server) => server.provider.call(&self.session, service, method, data),
             None => Box::pin(ready(Err(ProviderError::Shutdown))),
         }
     }

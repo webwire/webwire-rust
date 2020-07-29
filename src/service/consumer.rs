@@ -8,7 +8,12 @@ use bytes::Bytes;
 /// generated service code.
 pub trait Consumer: Sync + Send {
     /// Call service method
-    fn call(&self, method: &str, data: Bytes) -> BoxFuture<Result<Bytes, ConsumerError>>;
+    fn call(
+        &self,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) -> BoxFuture<Result<Bytes, ConsumerError>>;
 }
 
 /// This trait adds a service name to the service consumer.

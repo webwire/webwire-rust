@@ -1,9 +1,9 @@
 //! Service provider
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use dashmap::DashMap;
 use futures::future::{ready, BoxFuture};
 
 /// Service provider
@@ -13,6 +13,7 @@ pub trait Provider<S: Sync + Send>: Sync + Send {
     fn call(
         &self,
         session: &Arc<S>,
+        service: &str,
         method: &str,
         data: Bytes,
     ) -> BoxFuture<'static, Result<Bytes, ProviderError>>;
@@ -68,25 +69,27 @@ impl ProviderError {
 /// The router is used to register service provider and dispatch
 /// requests.
 pub struct Router<S: Sync + Send> {
-    services: HashMap<String, Box<dyn Provider<S>>>,
+    services: DashMap<String, Box<dyn Provider<S>>>,
 }
 
 impl<S: Sync + Send> Router<S> {
     /// Create an empty router
     pub fn new() -> Self {
         Self {
-            services: HashMap::new(),
+            services: DashMap::new(),
         }
     }
     /// Add service provider to this router
-    pub fn service<P>(&mut self, provider: P)
+    pub fn service<P>(&self, provider: P)
     where
         P: NamedProvider<S> + 'static,
     {
         self.services.insert(P::NAME.to_owned(), Box::new(provider));
     }
-    /// Call a service
-    pub fn call(
+}
+
+impl<S: Sync + Send> Provider<S> for Router<S> {
+    fn call(
         &self,
         session: &Arc<S>,
         service: &str,
@@ -94,7 +97,7 @@ impl<S: Sync + Send> Router<S> {
         data: Bytes,
     ) -> BoxFuture<'static, Result<Bytes, ProviderError>> {
         match self.services.get(service) {
-            Some(provider) => provider.call(session, method, data),
+            Some(provider) => provider.call(session, service, method, data),
             None => Box::pin(ready(Err(ProviderError::ServiceNotFound))),
         }
     }
