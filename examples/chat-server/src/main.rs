@@ -54,7 +54,7 @@ async fn main() {
     // Create session handler
     let session_handler = Sessions::new();
 
-    // Create services
+    // Create service router
     let router = Arc::new(Router::<Session>::new());
 
     // Create webwire server
