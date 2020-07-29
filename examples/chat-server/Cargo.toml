@@ -13,6 +13,7 @@ members = [
 async-trait = "0.1"
 serde_json = "1"
 hyper = "0.13"
+bytes = "0.5"
 
 [dependencies.serde]
 features = ["derive"]

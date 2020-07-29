@@ -32,9 +32,10 @@ pub mod chat {
         fn call(
             &self,
             session: &::std::sync::Arc<S>,
+            _service: &str,
             method: &str,
             input: ::bytes::Bytes,
-        ) -> ::futures::future::BoxFuture<Result<::bytes::Bytes, ::webwire::ProviderError>>
+        ) -> ::futures::future::BoxFuture<'static, Result<::bytes::Bytes, ::webwire::ProviderError>>
         {
             let service = self.0(session.clone());
             match method {
@@ -63,7 +64,7 @@ pub mod chat {
         ) -> Result<Result<(), SendError>, ::webwire::ConsumerError> {
             let data = serde_json::to_vec(input)
                 .map_err(|e| ::webwire::ConsumerError::SerializerError(e))?;
-            let output = self.0.call("send", data.into()).await?;
+            let output = self.0.call("Server", "send", data.into()).await?;
             let response = serde_json::from_slice(&output)
                 .map_err(|e| ::webwire::ConsumerError::DeserializerError(e))?;
             Ok(response)
@@ -90,9 +91,10 @@ pub mod chat {
         fn call(
             &self,
             session: &::std::sync::Arc<S>,
+            _service: &str,
             method: &str,
             input: ::bytes::Bytes,
-        ) -> ::futures::future::BoxFuture<Result<::bytes::Bytes, ::webwire::ProviderError>>
+        ) -> ::futures::future::BoxFuture<'static, Result<::bytes::Bytes, ::webwire::ProviderError>>
         {
             let service = self.0(session.clone());
             match method {
@@ -118,7 +120,7 @@ pub mod chat {
         pub async fn on_message(&self, input: &Message) -> Result<(), ::webwire::ConsumerError> {
             let data = serde_json::to_vec(input)
                 .map_err(|e| ::webwire::ConsumerError::SerializerError(e))?;
-            let output = self.0.call("on_message", data.into()).await?;
+            let output = self.0.call("Client", "on_message", data.into()).await?;
             let response = serde_json::from_slice(&output)
                 .map_err(|e| ::webwire::ConsumerError::DeserializerError(e))?;
             Ok(response)
