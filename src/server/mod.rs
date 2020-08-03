@@ -3,9 +3,12 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use bytes::Bytes;
 use dashmap::DashMap;
+use futures::future::{ready, BoxFuture};
 
 use crate::rpc::transport::Transport;
+use crate::service::consumer::{Consumer, ConsumerError};
 use crate::service::provider::Provider;
 
 pub mod connection;
@@ -58,6 +61,20 @@ impl<S: Sync + Send + 'static> Server<S> {
     /// This function is called when a client disconnects.
     pub fn disconnect(self: &Arc<Self>, connection_id: usize) {
         self.connections.remove(&connection_id);
+    }
+}
+
+impl<S: Sync + Send + 'static> Consumer for Server<S> {
+    fn call(
+        &self,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) -> BoxFuture<Result<Bytes, ConsumerError>> {
+        for connection in self.connections() {
+            connection.notify(service, method, data.clone());
+        }
+        Box::pin(ready(Err(ConsumerError::Broadcast)))
     }
 }
 

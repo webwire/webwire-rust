@@ -43,6 +43,9 @@ impl<S: Sync + Send + 'static> Connection<S> {
     pub fn call(&self, service: &str, method: &str, data: Bytes) -> Response {
         self.engine.request(service, method, data)
     }
+    pub fn notify(&self, service: &str, method: &str, data: Bytes) {
+        self.engine.notify(service, method, data)
+    }
 }
 
 impl<S: Sync + Send + 'static> EngineListener for Connection<S> {

@@ -8,23 +8,19 @@ use ::api::chat;
 
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
-use ::webwire::{Response, Router, Server};
+use ::webwire::{Response, Router, Server, ConsumerError};
 
 struct ChatService {
     #[allow(dead_code)]
     session: Arc<Session>,
-    server: Weak<Server<Session>>,
+    server: Arc<Server<Session>>,
 }
 
 #[async_trait]
 impl chat::Server<Session> for ChatService {
     async fn send(&self, message: &chat::Message) -> Response<Result<(), chat::SendError>> {
-        if let Some(server) = self.server.upgrade() {
-            let data = Bytes::from(serde_json::to_vec(message).unwrap());
-            for connection in server.connections() {
-                connection.call("chat.Client", "on_message", data.clone());
-            }
-        }
+        let client = chat::ClientConsumer(&*self.server);
+        client.on_message(message).await.unwrap_err(), ConsumerError::Broadcast);
         Ok(Ok(()))
     }
 }
@@ -64,13 +60,13 @@ async fn main() {
     ));
 
     // Register services
-    {
+    router.service(chat::ServerProvider({
         let server = server.clone();
-        router.service(chat::ServerProvider(move |session| ChatService {
+        move |session| ChatService {
             session,
-            server: Arc::downgrade(&server),
-        }));
-    }
+            server: server.clone(),
+        }
+    }));
 
     // Start hyper service
     let addr = SocketAddr::from(([127, 0, 0, 1], 2323));
