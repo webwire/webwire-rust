@@ -5,10 +5,9 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use futures::future::{ready, BoxFuture};
 
 use crate::rpc::transport::Transport;
-use crate::service::consumer::{Consumer, ConsumerError};
+use crate::service::consumer::{Consumer, Response};
 use crate::service::provider::Provider;
 
 pub mod connection;
@@ -65,16 +64,26 @@ impl<S: Sync + Send + 'static> Server<S> {
 }
 
 impl<S: Sync + Send + 'static> Consumer for Server<S> {
-    fn call(
+    fn notify(
         &self,
         service: &str,
         method: &str,
         data: Bytes,
-    ) -> BoxFuture<Result<Bytes, ConsumerError>> {
+    ) {
         for connection in self.connections() {
             connection.notify(service, method, data.clone());
         }
-        Box::pin(ready(Err(ConsumerError::Broadcast)))
+    }
+    fn request(
+        &self,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) -> Response {
+        for connection in self.connections() {
+            connection.request(service, method, data.clone()).assert_notification();
+        }
+        Response::notification()
     }
 }
 

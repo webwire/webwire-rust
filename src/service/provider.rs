@@ -40,6 +40,8 @@ pub enum ProviderError {
     DeserializerError(serde_json::Error),
     /// An error occured while serializing the response.
     SerializerError(serde_json::Error),
+    /// The request did not validate
+    ValidationError(validator::ValidationErrors),
     /// Something else went wrong.
     InternalError(Box<dyn std::error::Error + Sync + Send>),
     /// The server is being shut down and therefore request processing is
@@ -58,6 +60,7 @@ impl ProviderError {
             // the consumer can do about.
             Self::SerializerError(_) => "InternalError",
             Self::DeserializerError(_) => "DeserializerError",
+            Self::ValidationError(_) => "ValidationError",
             Self::InternalError(_) => "InternalError",
             // This erros should never actually be returned to the client.
             Self::Shutdown => "InternalError",

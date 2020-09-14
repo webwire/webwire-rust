@@ -2,11 +2,8 @@
 //! of request and response matching and is the middle layer between
 //! the transport and service layer.
 
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use dashmap::DashMap;
@@ -14,35 +11,12 @@ use futures::future::BoxFuture;
 use log::info;
 use tokio::sync::oneshot;
 
-use crate::service::{ConsumerError, ProviderError};
+use crate::service::consumer::{ConsumerError, Response};
+use crate::service::provider::ProviderError;
 use crate::utils::AtomicWeak;
 
 use super::message::{self, ErrorKind, Message};
 use super::transport::{FrameError, FrameHandler, Transport};
-
-/// This response object implements a future that can be polled in order
-/// to wait for the result of a method. It does however not need to be
-/// polled to make progress and shouldn't be polled if it was created as
-/// part of a notification to multiple recipients (broadcast).
-pub struct Response {
-    is_broadcast: bool,
-    result_rx: oneshot::Receiver<Result<Bytes, ConsumerError>>,
-}
-
-impl Future for Response {
-    type Output = Result<Bytes, ConsumerError>;
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if self.is_broadcast {
-            Poll::Ready(Err(ConsumerError::Broadcast))
-        } else {
-            match Pin::new(&mut self.result_rx).poll(cx) {
-                Poll::Ready(Ok(response)) => Poll::Ready(response),
-                Poll::Ready(Err(_)) => Poll::Ready(Err(ConsumerError::Disconnected)),
-                Poll::Pending => Poll::Pending,
-            }
-        }
-    }
-}
 
 /// Transport neutral message factory and mapper between requests and
 /// responses. This is the heart of all RPC handling.
@@ -118,10 +92,7 @@ impl Engine {
         let (tx, rx) = oneshot::channel();
         self.requests.insert(message.message_id, tx);
         self.send(message.to_bytes());
-        Response {
-            is_broadcast: false,
-            result_rx: rx,
-        }
+        Response::new(rx)
     }
 
     /// Handle requests and notifications which are received from the remote side.
@@ -254,12 +225,7 @@ mod tests {
     #[tokio::main]
     #[test]
     async fn test_response_err_broadcast() {
-        use tokio::sync::oneshot;
-        let (_tx, rx) = oneshot::channel();
-        let response: Response = Response {
-            is_broadcast: true,
-            result_rx: rx,
-        };
+        let response = Response::notification();
         assert!(matches!(response.await, Err(ConsumerError::Broadcast)));
     }
 
@@ -269,10 +235,7 @@ mod tests {
         use tokio::sync::oneshot;
         let (tx, rx) = oneshot::channel();
         drop(tx);
-        let response: Response = Response {
-            is_broadcast: false,
-            result_rx: rx,
-        };
+        let response: Response = Response::new(rx);
         assert!(matches!(response.await, Err(ConsumerError::Disconnected)));
     }
 

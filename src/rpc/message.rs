@@ -107,7 +107,8 @@ impl Heartbeat {
 impl Request {
     /// Serialize this request into `Bytes`
     pub fn to_bytes(&self) -> Bytes {
-        let header = format!("2 {} {}.{}", self.message_id, self.service, self.method);
+        let code = if self.is_notification { 1 } else { 2 };
+        let header = format!("{} {} {}.{}", code, self.message_id, self.service, self.method);
         let capacity = header.len() + 1 + self.data.len();
         let mut buf = BytesMut::with_capacity(capacity);
         buf.put(header.as_bytes());

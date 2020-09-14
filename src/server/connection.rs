@@ -6,9 +6,10 @@ use bytes::Bytes;
 use futures::future::{ready, BoxFuture};
 
 use super::Server;
-use crate::rpc::engine::{Engine, EngineListener, Response};
+use crate::rpc::engine::{Engine, EngineListener};
 use crate::rpc::transport::Transport;
-use crate::service::ProviderError;
+use crate::service::consumer::{Consumer, Response};
+use crate::service::provider::ProviderError;
 
 /// This is a client currently connected to the server.
 pub struct Connection<S: Sync + Send>
@@ -39,13 +40,6 @@ impl<S: Sync + Send + 'static> Connection<S> {
             .start(Arc::downgrade(&this) as Weak<dyn EngineListener + Sync + Send>);
         this
     }
-    /// Call method on remote side
-    pub fn call(&self, service: &str, method: &str, data: Bytes) -> Response {
-        self.engine.request(service, method, data)
-    }
-    pub fn notify(&self, service: &str, method: &str, data: Bytes) {
-        self.engine.notify(service, method, data)
-    }
 }
 
 impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
@@ -64,5 +58,24 @@ impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
         if let Some(server) = self.server.upgrade() {
             server.disconnect(self.id);
         }
+    }
+}
+
+impl<S: Sync + Send + 'static> Consumer for Connection<S> {
+    fn notify(
+        &self,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) {
+        self.engine.notify(service, method, data)
+    }
+    fn request(
+        &self,
+        service: &str,
+        method: &str,
+        data: Bytes,
+    ) -> Response {
+        self.engine.request(service, method, data)
     }
 }
