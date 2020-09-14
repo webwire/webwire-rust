@@ -1,7 +1,16 @@
 #[allow(dead_code)]
 pub mod chat {
-    #[derive(Clone, Debug, Eq, PartialEq, :: serde :: Serialize, :: serde :: Deserialize)]
+    #[derive(
+        Clone,
+        Debug,
+        Eq,
+        PartialEq,
+        :: serde :: Serialize,
+        :: serde :: Deserialize,
+        :: validator :: Validate,
+    )]
     pub struct Message {
+        #[validate(length(min = 1i64, max = 2048i64))]
         pub text: String,
     }
     #[derive(Clone, Debug, Eq, PartialEq, :: serde :: Serialize, :: serde :: Deserialize)]
@@ -41,7 +50,9 @@ pub mod chat {
             match method {
                 "send" => Box::pin(async move {
                     let input = serde_json::from_slice::<Message>(&input)
-                        .map_err(|e| ::webwire::ProviderError::DeserializerError(e))?;
+                        .map_err(::webwire::ProviderError::DeserializerError)?;
+                    ::validator::Validate::validate(&input)
+                        .map_err(::webwire::ProviderError::ValidationError)?;
                     let output = service.send(&input).await?;
                     let response = serde_json::to_vec(&output)
                         .map_err(|e| ::webwire::ProviderError::SerializerError(e))
@@ -64,7 +75,7 @@ pub mod chat {
         ) -> Result<Result<(), SendError>, ::webwire::ConsumerError> {
             let data = serde_json::to_vec(input)
                 .map_err(|e| ::webwire::ConsumerError::SerializerError(e))?;
-            let output = self.0.call("Server", "send", data.into()).await?;
+            let output = self.0.request("Server", "send", data.into()).await?;
             let response = serde_json::from_slice(&output)
                 .map_err(|e| ::webwire::ConsumerError::DeserializerError(e))?;
             Ok(response)
@@ -100,7 +111,9 @@ pub mod chat {
             match method {
                 "on_message" => Box::pin(async move {
                     let input = serde_json::from_slice::<Message>(&input)
-                        .map_err(|e| ::webwire::ProviderError::DeserializerError(e))?;
+                        .map_err(::webwire::ProviderError::DeserializerError)?;
+                    ::validator::Validate::validate(&input)
+                        .map_err(::webwire::ProviderError::ValidationError)?;
                     let output = service.on_message(&input).await?;
                     let response = serde_json::to_vec(&output)
                         .map_err(|e| ::webwire::ProviderError::SerializerError(e))
@@ -120,7 +133,7 @@ pub mod chat {
         pub async fn on_message(&self, input: &Message) -> Result<(), ::webwire::ConsumerError> {
             let data = serde_json::to_vec(input)
                 .map_err(|e| ::webwire::ConsumerError::SerializerError(e))?;
-            let output = self.0.call("Client", "on_message", data.into()).await?;
+            let output = self.0.request("Client", "on_message", data.into()).await?;
             let response = serde_json::from_slice(&output)
                 .map_err(|e| ::webwire::ConsumerError::DeserializerError(e))?;
             Ok(response)

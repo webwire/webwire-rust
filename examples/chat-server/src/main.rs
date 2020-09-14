@@ -1,8 +1,7 @@
 use std::net::SocketAddr;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 
 use ::api::chat;
 
@@ -20,7 +19,7 @@ struct ChatService {
 impl chat::Server<Session> for ChatService {
     async fn send(&self, message: &chat::Message) -> Response<Result<(), chat::SendError>> {
         let client = chat::ClientConsumer(&*self.server);
-        client.on_message(message).await.unwrap_err(), ConsumerError::Broadcast);
+        drop(client.on_message(message).await); // FIXME
         Ok(Ok(()))
     }
 }
@@ -69,7 +68,7 @@ async fn main() {
     }));
 
     // Start hyper service
-    let addr = SocketAddr::from(([127, 0, 0, 1], 2323));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 2323));
     let make_service = MakeHyperService { server };
     let server = hyper::Server::bind(&addr).serve(make_service);
 
