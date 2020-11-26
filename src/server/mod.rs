@@ -36,7 +36,7 @@ impl<S: Sync + Send + 'static> Server<S> {
             last_connection_id: AtomicUsize::new(0),
             connections: DashMap::new(),
             session_handler: Box::new(session_handler),
-            provider: provider,
+            provider,
         }
     }
     /// Return iterator over all connections.

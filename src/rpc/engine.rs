@@ -125,7 +125,7 @@ impl Engine {
         // FIXME this is almost the same code as when sending notifications and requests
         let message = message::Response {
             message_id: self.next_message_id(),
-            request_message_id: request_message_id,
+            request_message_id,
             // FIXME implement proper mapping of ProviderError to ErrorKind
             data: data.map_err(|e| message::ErrorKind::Other(e.to_bytes())),
         };
