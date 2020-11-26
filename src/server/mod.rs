@@ -70,9 +70,7 @@ impl<S: Sync + Send + 'static> Consumer for Server<S> {
         }
     }
     fn request(&self, service: &str, method: &str, data: Bytes) -> Response {
-        for connection in self.connections() {
-            connection.request(service, method, data.clone()).assert_notification();
-        }
+        self.notify(service, method, data);
         Response::notification()
     }
 }

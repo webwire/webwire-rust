@@ -31,7 +31,12 @@ impl Response {
     /// call. This is equal to calling `drop()` but also fails with an
     /// error if the response object was created by a call to request.
     pub fn assert_notification(self) {
-        assert!(self.rx.is_none())
+        assert!(self.is_notification())
+    }
+    /// Returns wether the response object was returned by a notification
+    /// call.
+    pub fn is_notification(&self) -> bool {
+        self.rx.is_none()
     }
 }
 
