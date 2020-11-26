@@ -1,4 +1,4 @@
-# Webwire Library for Rust
+# Webwire library for Rust
 [![Crates.io](https://img.shields.io/crates/v/webwire)](https://crates.io/crates/webwire)
 [![GitHub](https://img.shields.io/github/license/webwire/webwire)](https://github.com/webwire/webwire/blob/master/LICENSE)
 [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/webwire/webwire/Rust)](https://github.com/webwire/webwire/actions)
