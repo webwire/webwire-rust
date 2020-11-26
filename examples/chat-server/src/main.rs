@@ -19,7 +19,9 @@ struct ChatService {
 impl chat::Server<Session> for ChatService {
     async fn send(&self, message: &chat::Message) -> Response<Result<(), chat::SendError>> {
         let client = chat::ClientConsumer(&*self.server);
-        drop(client.on_message(message).await); // FIXME
+        // FIXME Using matches!() to ensure the response resolves to
+        // a Err(ConsumerError::Broadcast) is far from pretty.
+        assert!(matches!(client.on_message(message).await, Err(ConsumerError::Broadcast)));
         Ok(Ok(()))
     }
 }
