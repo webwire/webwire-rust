@@ -16,10 +16,3 @@ servers using the Rust programming language.
 
 To learn more about webwire in general please visit the website:
 [webwire.dev](https://webwire.dev/)
-
-# WORK IN PROGRESS
-
-> **Webwire is not ready to use! All the documentation and code in this
-repository is either incomplete or non functional. Don't expect anything
-to work, yet. Right now this repository is just a collection of ideas and
-preliminary implementations.**
