@@ -5,8 +5,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tokio::sync::oneshot;
 use bytes::Bytes;
+use tokio::sync::oneshot;
 
 /// This response object implements a future that can be polled in order
 /// to wait for the result of a method. It does however not need to be
@@ -20,19 +20,15 @@ pub struct Response {
 impl Response {
     /// Create a new response object from a oneshot receiver
     pub fn new(rx: oneshot::Receiver<Result<Bytes, ConsumerError>>) -> Self {
-        Self {
-            rx: Some(rx)
-        }
+        Self { rx: Some(rx) }
     }
     /// Create a broadcast response object which always resolves
     /// to `Err(ConsumerError::Broadcast)` when polled.
-    pub fn notification() -> Self  {
-        Self {
-            rx: None
-        }
+    pub fn notification() -> Self {
+        Self { rx: None }
     }
     /// Assert that the response object was returned by a notification
-    /// call. This is equal t ocalling `drop()` but also fails with an
+    /// call. This is equal to calling `drop()` but also fails with an
     /// error if the response object was created by a call to request.
     pub fn assert_notification(self) {
         assert!(self.rx.is_none())
@@ -54,24 +50,13 @@ impl Future for Response {
     }
 }
 
-
 /// This trait is implemented by all generic consumers and used by the
 /// generated service code.
 pub trait Consumer: Sync + Send {
     /// Call service method
-    fn request(
-        &self,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    ) -> Response;
+    fn request(&self, service: &str, method: &str, data: Bytes) -> Response;
     /// Notify service method
-    fn notify(
-        &self,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    );
+    fn notify(&self, service: &str, method: &str, data: Bytes);
 }
 
 /// This trait adds a service name to the service consumer.

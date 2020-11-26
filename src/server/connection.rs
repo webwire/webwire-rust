@@ -62,20 +62,10 @@ impl<S: Sync + Send + 'static> EngineListener for Connection<S> {
 }
 
 impl<S: Sync + Send + 'static> Consumer for Connection<S> {
-    fn notify(
-        &self,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    ) {
+    fn notify(&self, service: &str, method: &str, data: Bytes) {
         self.engine.notify(service, method, data)
     }
-    fn request(
-        &self,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    ) -> Response {
+    fn request(&self, service: &str, method: &str, data: Bytes) -> Response {
         self.engine.request(service, method, data)
     }
 }

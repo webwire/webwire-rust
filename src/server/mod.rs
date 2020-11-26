@@ -64,22 +64,12 @@ impl<S: Sync + Send + 'static> Server<S> {
 }
 
 impl<S: Sync + Send + 'static> Consumer for Server<S> {
-    fn notify(
-        &self,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    ) {
+    fn notify(&self, service: &str, method: &str, data: Bytes) {
         for connection in self.connections() {
             connection.notify(service, method, data.clone());
         }
     }
-    fn request(
-        &self,
-        service: &str,
-        method: &str,
-        data: Bytes,
-    ) -> Response {
+    fn request(&self, service: &str, method: &str, data: Bytes) -> Response {
         for connection in self.connections() {
             connection.request(service, method, data.clone()).assert_notification();
         }
