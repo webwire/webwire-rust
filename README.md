@@ -1,4 +1,5 @@
 # Webwire library for Rust
+
 [![Crates.io](https://img.shields.io/crates/v/webwire)](https://crates.io/crates/webwire)
 [![GitHub](https://img.shields.io/github/license/webwire/webwire)](https://github.com/webwire/webwire/blob/master/LICENSE)
 [![GitHub Workflow Status](https://img.shields.io/github/workflow/status/webwire/webwire/Rust)](https://github.com/webwire/webwire/actions)
@@ -16,3 +17,12 @@ servers using the Rust programming language.
 
 To learn more about webwire in general please visit the website:
 [webwire.dev](https://webwire.dev/)
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0)>
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT)>
+
+at your option.

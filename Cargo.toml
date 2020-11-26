@@ -1,8 +1,13 @@
 [package]
-authors = ["Michael P. Jung <michael.jung@terreon.de>"]
-edition = "2018"
 name = "webwire"
 version = "0.1.0"
+authors = ["Michael P. Jung <michael.jung@terreon.de>"]
+description = "Webwire library for Rust"
+keywords = ["webwire", "contract-first", "api"]
+license = "MIT/Apache-2.0"
+repository = "https://github.com/webwire/webwire-rust"
+readme = "README.md"
+edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
