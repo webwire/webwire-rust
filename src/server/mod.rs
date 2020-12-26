@@ -84,8 +84,6 @@ where
         'a,
         usize,
         Arc<Connection<S>>,
-        ahash::RandomState,
-        DashMap<usize, Arc<Connection<S>>>,
     >,
 }
 
