@@ -6,7 +6,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use dashmap::DashMap;
 
-use crate::rpc::transport::Transport;
+use crate::transport::Transport;
 use crate::service::consumer::{Consumer, Response};
 use crate::service::provider::Provider;
 

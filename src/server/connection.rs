@@ -7,7 +7,7 @@ use futures::future::{ready, BoxFuture};
 
 use super::Server;
 use crate::rpc::engine::{Engine, EngineListener};
-use crate::rpc::transport::Transport;
+use crate::transport::Transport;
 use crate::service::consumer::{Consumer, Response};
 use crate::service::provider::ProviderError;
 

@@ -4,6 +4,8 @@ use std::fmt;
 
 use bytes::Bytes;
 
+pub mod websocket;
+
 /// A transport is typically a single client-server connection but
 /// could also be used to implement messaging via a message queuing
 /// service.

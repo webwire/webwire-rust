@@ -31,6 +31,7 @@
 pub mod rpc;
 pub mod server;
 pub mod service;
+pub mod transport;
 pub mod utils;
 
 pub use {

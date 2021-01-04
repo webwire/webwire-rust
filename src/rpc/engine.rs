@@ -16,7 +16,7 @@ use crate::service::provider::ProviderError;
 use crate::utils::AtomicWeak;
 
 use super::message::{self, ErrorKind, Message};
-use super::transport::{FrameError, FrameHandler, Transport};
+use crate::transport::{FrameError, FrameHandler, Transport};
 
 /// Transport neutral message factory and mapper between requests and
 /// responses. This is the heart of all RPC handling.
@@ -219,7 +219,7 @@ pub trait EngineListener {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rpc::transport::TransportError;
+    use crate::transport::TransportError;
     use futures::future::ready;
 
     #[tokio::main]

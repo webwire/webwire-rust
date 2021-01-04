@@ -4,117 +4,14 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use bytes::Bytes;
 use futures::future::BoxFuture;
-use futures::stream::{SplitSink, SplitStream};
-use futures::{SinkExt, StreamExt};
 use hyper::server::conn::AddrStream;
-use hyper::{header, http, Body, Request, Response, StatusCode};
+use hyper::{header, http, upgrade::Upgraded, Body, Request, Response, StatusCode};
 use hyper_websocket_lite::{server_upgrade, AsyncClient};
-use tokio::sync::mpsc;
-use websocket_codec::{Message, Opcode};
 
 use super::session::{Auth, AuthError};
-use crate::rpc::transport::{FrameError, FrameHandler, Transport, TransportError};
 
-/// A transport based on a WebSocket connection
-pub struct WebsocketTransport {
-    tx: mpsc::UnboundedSender<Message>,
-    client: std::sync::Mutex<Option<(AsyncClient, mpsc::UnboundedReceiver<Message>)>>,
-}
-
-impl WebsocketTransport {
-    /// Create new websocket transport using an `AsyncClient` provided by
-    /// the `hyper_websocket_lite` crate.
-    pub fn new(client: AsyncClient) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
-        Self {
-            tx,
-            client: std::sync::Mutex::new(Some((client, rx))),
-        }
-    }
-}
-
-impl Transport for WebsocketTransport {
-    fn send(&self, frame: Bytes) -> Result<(), TransportError> {
-        self.tx
-            .send(Message::binary(frame))
-            .map_err(|_| TransportError::Disconnected)
-    }
-    ///
-    /// Important: This methods panics if start() has already been called.
-    fn start(&self, frame_handler: Box<dyn FrameHandler>) {
-        let (client, rx) = self
-            .client
-            .try_lock()
-            .expect("Transport::start() must only be called once.")
-            .take()
-            .expect("Transport::start() must only be called once.");
-        let (sink, stream) = client.split();
-        let sender_fut = sender(sink, rx);
-        let receiver_fut = receiver(stream, self.tx.clone(), frame_handler);
-        tokio::spawn(async move {
-            tokio::join!(sender_fut, receiver_fut);
-        });
-    }
-}
-
-async fn sender(
-    mut sink: SplitSink<AsyncClient, Message>,
-    mut rx: mpsc::UnboundedReceiver<Message>,
-) {
-    while let Some(message) = rx.recv().await {
-        if let Err(e) = sink.send(message).await {
-            // FIXME
-            println!("Transport error while sending: {}", e);
-            break;
-        }
-    }
-    // FIXME shutdown receiver, too.
-}
-
-async fn receiver(
-    mut stream: SplitStream<AsyncClient>,
-    tx: mpsc::UnboundedSender<Message>,
-    frame_handler: Box<dyn FrameHandler>,
-) {
-    loop {
-        match stream.next().await {
-            Some(Ok(message)) => match message.opcode() {
-                Opcode::Ping => {
-                    if tx.send(Message::pong(Bytes::default())).is_err() {
-                        // Sender is gone. Time to shut down the receiver, too.
-                        break;
-                    }
-                }
-                Opcode::Binary | Opcode::Text => {
-                    // FIXME log an error when the frame handler fails?
-                    match frame_handler.handle_frame(message.into_data()) {
-                        Ok(()) => continue,
-                        Err(FrameError::HandlerGone) => break,
-                        Err(FrameError::ParseError) => {
-                            // Be polite. Send a close message. If the sender is already gone
-                            // this is nothing unusual and to be expected.
-                            let _ = tx.send(Message::close(Some((
-                                1,
-                                "Unable to parse frame".to_string(),
-                            ))));
-                            break;
-                        }
-                    }
-                }
-                Opcode::Close => break,
-                Opcode::Pong => {}
-            },
-            Some(Err(e)) => {
-                println!("Transport error while receiving: {}", e);
-                break;
-            }
-            None => break,
-        }
-    }
-    frame_handler.handle_disconnect();
-}
+type WebsocketTransport = crate::transport::websocket::WebsocketTransport<Upgraded>;
 
 async fn on_client<S: Sync + Send + 'static>(
     client: AsyncClient,
