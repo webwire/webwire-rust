@@ -30,7 +30,16 @@ where
     S: Sync + Send + 'static,
 {
     let auth = match request.headers().get(hyper::header::AUTHORIZATION) {
-        Some(value) => Some(Auth::parse(value.as_bytes())),
+        Some(value) => match Auth::parse(value.as_bytes()) {
+            Some(auth) => Some(auth),
+            None => {
+                return Ok(Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .header(header::CONTENT_TYPE, "text/plain")
+                    .body(Body::from("Unauthorized: Invalid authentication header"))
+                    .unwrap());
+            }
+        },
         None => None,
     };
     let session = match server.auth(auth).await {
@@ -39,7 +48,21 @@ where
             return Ok(Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from("Unauthorized"))
+                .body(Body::from("Unauthorized: Invalid credentials"))
+                .unwrap());
+        }
+        Err(AuthError::Invalid) => {
+            return Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("Unauthorized: Invalid authentication header"))
+                .unwrap());
+        }
+        Err(AuthError::Unsupported) => {
+            return Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .header(header::CONTENT_TYPE, "text/plain")
+                .body(Body::from("Unauthorized: Unsupported authentication method"))
                 .unwrap());
         }
         Err(AuthError::InternalServerError) => {

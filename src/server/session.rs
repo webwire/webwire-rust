@@ -3,12 +3,13 @@
 use std::fmt;
 
 use async_trait::async_trait;
+use byteorder::{BigEndian, ReadBytesExt};
 use uuid::Uuid;
 
 /// A parsed version of the `Authorization` header
 pub enum Auth {
     /// User name + Password
-    Login {
+    Basic {
         /// User name
         username: String,
         /// Password
@@ -17,7 +18,7 @@ pub enum Auth {
     /// API Key
     Key(String),
     /// Token Login (e.g. JWT)
-    Bearer(String),
+    Bearer(Vec<u8>),
     /// Login using an existing session. This is used to implement
     /// reliable messaging. The client connects using the same session
     /// ID and the last message it has received.
@@ -28,14 +29,63 @@ pub enum Auth {
         last_message_id: u64,
     },
     /// Another authentication scheme was used.
-    Other(String, String),
+    Other {
+        /// Authentication type
+        auth_type: Vec<u8>,
+        /// Authencation credentials
+        credentials: Vec<u8>,
+    },
 }
 
 impl Auth {
     /// Parse the `Authorization` header returning an `Auth` object.
-    pub fn parse(_header: &[u8]) -> Auth {
-        // FIXME implement this
-        todo!()
+    pub fn parse(header: &[u8]) -> Option<Auth> {
+        let mut parts = header.splitn(2, |c| *c == b' ');
+        let auth_type = parts.next()?;
+        let credentials = parts.next()?.to_owned();
+        Some(match auth_type {
+            b"Basic" => Auth::basic_from_base64(&credentials)?,
+            b"Key" => Auth::Key(String::from_utf8(credentials).ok()?),
+            b"Bearer" => Auth::bearer_from_bytes(&credentials)?,
+            b"Session" => Auth::session_from_base64(&credentials)?,
+            auth_type => Auth::Other {
+                auth_type: auth_type.to_owned(),
+                credentials: credentials.to_owned(),
+            },
+        })
+    }
+    /// Create Auth::Basic object from base64 encoded credentials
+    pub fn basic_from_base64(credentials: &[u8]) -> Option<Auth> {
+        let s = base64::decode(credentials).ok()?;
+        let s = String::from_utf8(s).ok()?;
+        let mut it = s.splitn(2, ":");
+        let username = it.next()?;
+        let password = it.next().unwrap_or_default();
+        Some(Auth::Basic {
+            username: username.to_owned(),
+            password: password.to_owned(),
+        })
+    }
+    /// Create Auth::Bearer object from credentials
+    pub fn bearer_from_bytes(credentials: &[u8]) -> Option<Auth> {
+        let s = base64::decode(credentials).ok()?;
+        Some(Auth::Bearer(s))
+    }
+    /// Create Auth::Session object from credentials
+    pub fn session_from_base64(credentials: &[u8]) -> Option<Auth> {
+        let s = base64::decode(credentials).ok()?;
+        if s.len() != 24 {
+            return None;
+        }
+        let id = Uuid::from_slice(&s[0..16]).ok()?;
+        let mut cursor = std::io::Cursor::new(&s[16..]);
+        let last_message_id = cursor
+            .read_u64::<BigEndian>()
+            .ok()?;
+        Some(Auth::Session {
+            id,
+            last_message_id,
+        })
     }
 }
 
@@ -62,6 +112,10 @@ pub enum AuthError {
     /// The given credentials were not accepted and thus the remote
     /// side is not authorized to connect.
     Unauthorized,
+    /// The given authorization header was invalid and could not be parsed.
+    Invalid,
+    /// The requested authorization method is not supported.
+    Unsupported,
     /// An internal server happened.
     InternalServerError,
 }
@@ -73,6 +127,8 @@ impl fmt::Display for AuthError {
             "{}",
             match self {
                 Self::Unauthorized => "Unauthorized",
+                Self::Invalid => "Invalid",
+                Self::Unsupported => "Unsupported",
                 Self::InternalServerError => "Error",
             }
         )

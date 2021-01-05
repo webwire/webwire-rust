@@ -1212,6 +1212,8 @@ name = "webwire"
 version = "0.2.0"
 dependencies = [
  "async-trait",
+ "base64",
+ "byteorder",
  "bytes 1.0.0",
  "dashmap",
  "futures",
