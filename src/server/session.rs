@@ -1,9 +1,10 @@
 //! Authentication and sessions
 
 use std::fmt;
+use std::io::Write;
 
 use async_trait::async_trait;
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
 /// A parsed version of the `Authorization` header
@@ -45,8 +46,8 @@ impl Auth {
         let credentials = parts.next()?.to_owned();
         Some(match auth_type {
             b"Basic" => Auth::basic_from_base64(&credentials)?,
-            b"Key" => Auth::Key(String::from_utf8(credentials).ok()?),
-            b"Bearer" => Auth::bearer_from_bytes(&credentials)?,
+            b"Key" => Auth::Key(String::from_utf8(credentials).ok()?.to_owned()),
+            b"Bearer" => Auth::bearer_from_base64(&credentials)?,
             b"Session" => Auth::session_from_base64(&credentials)?,
             auth_type => Auth::Other {
                 auth_type: auth_type.to_owned(),
@@ -67,7 +68,7 @@ impl Auth {
         })
     }
     /// Create Auth::Bearer object from credentials
-    pub fn bearer_from_bytes(credentials: &[u8]) -> Option<Auth> {
+    pub fn bearer_from_base64(credentials: &[u8]) -> Option<Auth> {
         let s = base64::decode(credentials).ok()?;
         Some(Auth::Bearer(s))
     }
@@ -79,13 +80,43 @@ impl Auth {
         }
         let id = Uuid::from_slice(&s[0..16]).ok()?;
         let mut cursor = std::io::Cursor::new(&s[16..]);
-        let last_message_id = cursor
-            .read_u64::<BigEndian>()
-            .ok()?;
+        let last_message_id = cursor.read_u64::<BigEndian>().ok()?;
         Some(Auth::Session {
             id,
             last_message_id,
         })
+    }
+    /// Serialize the Auth object into bytes for use inside the HTTP header
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut buf = Vec::<u8>::new();
+        match self {
+            Self::Basic { username, password } => {
+                buf.write(b"Basic ").unwrap();
+                let b64 = base64::encode(format!("{}:{}", username, password));
+                buf.write(b64.as_bytes()).unwrap();
+            }
+            Self::Key(credentials) => {
+                buf.write(b"Key ").unwrap();
+                buf.write(credentials.as_bytes()).unwrap();
+            }
+            Self::Bearer(credentials) => {
+                let b64 = base64::encode(credentials);
+                buf.write(b64.as_bytes()).unwrap();
+            }
+            Self::Session { id, last_message_id } => {
+                buf.write(id.as_bytes()).unwrap();
+                buf.write_u64::<BigEndian>(*last_message_id).unwrap();
+            }
+            Self::Other { auth_type, credentials } => {
+                buf.write(auth_type).unwrap();
+                buf.write(b" ").unwrap();
+                buf.write(credentials).unwrap();
+            }
+        }
+        buf
+    }
+    pub fn to_string(&self) -> String {
+        String::from_utf8(self.to_bytes()).unwrap()
     }
 }
 
