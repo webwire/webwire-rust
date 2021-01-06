@@ -17,17 +17,24 @@ struct ChatService {
 
 #[async_trait]
 impl chat::Server<Session> for ChatService {
-    async fn send(&self, message: &chat::Message) -> Response<Result<(), chat::SendError>> {
+    async fn send(&self, message: &chat::ClientMessage) -> Response<Result<(), chat::SendError>> {
         let client = chat::ClientConsumer(&*self.server);
         // FIXME Using matches!() to ensure the response resolves to
         // a Err(ConsumerError::Broadcast) is far from pretty.
-        assert!(matches!(client.on_message(message).await, Err(ConsumerError::Broadcast)));
+        let msg = chat::Message {
+            username: self.session.username.clone(),
+            text: message.text.clone(),
+        };
+        let fut = client.on_message(&msg);
+        assert!(matches!(fut.await, Err(ConsumerError::Broadcast)));
         Ok(Ok(()))
     }
 }
 
 #[derive(Default)]
-struct Session {}
+struct Session {
+    username: String,
+}
 
 struct Sessions {}
 
@@ -39,8 +46,12 @@ impl Sessions {
 
 #[async_trait]
 impl webwire::SessionHandler<Session> for Sessions {
-    async fn auth(&self, _auth: Option<Auth>) -> Result<Session, AuthError> {
-        Ok(Session::default())
+    async fn auth(&self, auth: Option<Auth>) -> Result<Session, AuthError> {
+        match auth {
+            None => Err(AuthError::Unauthorized),
+            Some(Auth::Basic { username, password: _ }) => Ok(Session { username }),
+            Some(_) => Err(AuthError::Unsupported),
+        }
     }
     async fn connect(&self, _session: &Session) {}
     async fn disconnect(&self, _session: &Session) {}

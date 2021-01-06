@@ -28,6 +28,7 @@
 
 #![warn(missing_docs)]
 
+pub mod client;
 pub mod rpc;
 pub mod server;
 pub mod service;

@@ -1,12 +1,16 @@
 namespace chat {
     struct Message {
+        username: String (length=0..32),
         text: String (length=1..2048),
+    }
+    fieldset ClientMessage for Message {
+        text
     }
     enum SendError {
         PermissionDenied
     }
     service Server {
-        send: Message -> Result<None, SendError>,
+        send: ClientMessage -> Result<None, SendError>,
     }
     service Client {
         on_message: Message -> None,
