@@ -1,4 +1,6 @@
-# 0.2.0
+# Change Log
+
+## 0.2.0
 
 * Updaet `bytes` dependency to version 1
 * Update `dashmap` dependency to version 4
@@ -8,6 +10,6 @@
 * Update `validator` dependency to version 0.12
 * Update `websocket-codec` dependency to version 0.5
 
-# 0.1.0
+## 0.1.0
 
 * First release
