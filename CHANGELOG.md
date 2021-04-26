@@ -1,8 +1,12 @@
 # Change Log
 
+## 0.3.0
+
+* Update `validator` dependency to version 0.12
+
 ## 0.2.0
 
-* Updaet `bytes` dependency to version 1
+* Update `bytes` dependency to version 1
 * Update `dashmap` dependency to version 4
 * Update `tokio` dependency to version 1
 * Update `hyper` dependency to version 0.14
