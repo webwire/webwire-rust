@@ -22,7 +22,7 @@ log = "0.4"
 nom = "6"
 serde_json = "1"
 url = "2"
-validator = "0.12"
+validator = "0.13"
 websocket-codec = "0.5"
 websocket-lite = "0.5"
 
