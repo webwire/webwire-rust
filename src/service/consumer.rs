@@ -1,6 +1,7 @@
 //! Service consumer
 //!
 
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -90,4 +91,25 @@ pub enum ConsumerError {
     Broadcast,
     /// The remote side disconnected while waiting for a response
     Disconnected,
+    /// Transport specific error
+    // FIXME This should probably be a generic
+    Transport(Box<dyn std::error::Error + Sync + Send>),
 }
+
+impl fmt::Display for ConsumerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ServiceNotFound => write!(f, "Service not found"),
+            Self::MethodNotFound => write!(f, "Method not found"),
+            Self::SerializerError(e) => write!(f, "Serializer error: {}", e),
+            Self::DeserializerError(e) => write!(f, "Deserializer error: {}", e),
+            Self::ProviderError => write!(f, "Provider error"),
+            Self::InvalidData(_) => write!(f, "Invalid data"),
+            Self::Broadcast => write!(f, "Broadcast"),
+            Self::Disconnected => write!(f, "Disconnected"),
+            Self::Transport(e) => write!(f, "Transport: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for ConsumerError {}
