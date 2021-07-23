@@ -2,7 +2,7 @@
 
 ## 0.3.0
 
-* Update `validator` dependency to version 0.12
+* Update `validator` dependency to version 0.13
 
 ## 0.2.0
 
