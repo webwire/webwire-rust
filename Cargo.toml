@@ -20,7 +20,7 @@ hyper = { version = "0.14", features = ["http1", "http2", "server", "stream", "r
 hyper-websocket-lite = "0.5"
 lapin = { version = "1" }
 log = "0.4"
-nom = "6"
+nom = "7"
 tokio-amqp = { version = "1" }
 serde_json = "1"
 url = "2"
