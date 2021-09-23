@@ -1,6 +1,6 @@
 [package]
 name = "webwire"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Michael P. Jung <michael.jung@terreon.de>"]
 description = "Webwire library for Rust"
 keywords = ["webwire", "contract-first", "api"]
