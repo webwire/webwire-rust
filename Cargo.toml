@@ -24,7 +24,7 @@ nom = "6"
 tokio-amqp = { version = "1" }
 serde_json = "1"
 url = "2"
-validator = "0.13"
+validator = "0.14"
 websocket-codec = "0.5"
 websocket-lite = "0.5"
 

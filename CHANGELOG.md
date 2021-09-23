@@ -1,5 +1,9 @@
 # Change Log
 
+## 0.4.0 (unreleased)
+
+* Update `validator` dependency to version 0.14
+
 ## 0.3.0
 
 * Update `validator` dependency to version 0.13
