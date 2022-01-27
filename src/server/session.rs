@@ -46,12 +46,12 @@ impl Auth {
         let credentials = parts.next()?.to_owned();
         Some(match auth_type {
             b"Basic" => Auth::basic_from_base64(&credentials)?,
-            b"Key" => Auth::Key(String::from_utf8(credentials).ok()?.to_owned()),
+            b"Key" => Auth::Key(String::from_utf8(credentials).ok()?),
             b"Bearer" => Auth::bearer_from_base64(&credentials)?,
             b"Session" => Auth::session_from_base64(&credentials)?,
             auth_type => Auth::Other {
                 auth_type: auth_type.to_owned(),
-                credentials: credentials.to_owned(),
+                credentials,
             },
         })
     }
@@ -59,7 +59,7 @@ impl Auth {
     pub fn basic_from_base64(credentials: &[u8]) -> Option<Auth> {
         let s = base64::decode(credentials).ok()?;
         let s = String::from_utf8(s).ok()?;
-        let mut it = s.splitn(2, ":");
+        let mut it = s.splitn(2, ':');
         let username = it.next()?;
         let password = it.next().unwrap_or_default();
         Some(Auth::Basic {
@@ -91,32 +91,35 @@ impl Auth {
         let mut buf = Vec::<u8>::new();
         match self {
             Self::Basic { username, password } => {
-                buf.write(b"Basic ").unwrap();
+                buf.write_all(b"Basic ").unwrap();
                 let b64 = base64::encode(format!("{}:{}", username, password));
-                buf.write(b64.as_bytes()).unwrap();
+                buf.write_all(b64.as_bytes()).unwrap();
             }
             Self::Key(credentials) => {
-                buf.write(b"Key ").unwrap();
-                buf.write(credentials.as_bytes()).unwrap();
+                buf.write_all(b"Key ").unwrap();
+                buf.write_all(credentials.as_bytes()).unwrap();
             }
             Self::Bearer(credentials) => {
                 let b64 = base64::encode(credentials);
-                buf.write(b64.as_bytes()).unwrap();
+                buf.write_all(b64.as_bytes()).unwrap();
             }
             Self::Session { id, last_message_id } => {
-                buf.write(id.as_bytes()).unwrap();
+                buf.write_all(id.as_bytes()).unwrap();
                 buf.write_u64::<BigEndian>(*last_message_id).unwrap();
             }
             Self::Other { auth_type, credentials } => {
-                buf.write(auth_type).unwrap();
-                buf.write(b" ").unwrap();
-                buf.write(credentials).unwrap();
+                buf.write_all(auth_type).unwrap();
+                buf.write_all(b" ").unwrap();
+                buf.write_all(credentials).unwrap();
             }
         }
         buf
     }
-    pub fn to_string(&self) -> String {
-        String::from_utf8(self.to_bytes()).unwrap()
+}
+
+impl fmt::Display for Auth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", String::from_utf8(self.to_bytes()).unwrap())
     }
 }
 

@@ -25,7 +25,7 @@ impl<T: Sync + Send + ?Sized> AtomicWeak<T> {
     pub fn upgrade(&self) -> Option<Arc<T>> {
         (*self.0.lock().unwrap())
             .as_ref()
-            .and_then(|w| Weak::upgrade(&w))
+            .and_then(|w| Weak::upgrade(w))
     }
 }
 

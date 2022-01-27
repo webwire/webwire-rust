@@ -54,7 +54,7 @@ impl<S: Sync + Send + 'static> Server<S> {
     pub async fn connect<T: Transport + 'static>(self: &Arc<Self>, transport: T, session: S) {
         println!("Connect!");
         let connection_id = self.last_connection_id.fetch_add(1, Ordering::Relaxed) + 1;
-        let conn = Connection::new(connection_id, &self, transport, session);
+        let conn = Connection::new(connection_id, self, transport, session);
         self.connections.insert(connection_id, conn);
     }
     /// This function is called when a client disconnects.

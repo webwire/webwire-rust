@@ -205,7 +205,9 @@ fn parse_heartbeat(input: &[u8]) -> IResult<&[u8], Heartbeat> {
     })(input)
 }
 
-fn parse_notification(input: &[u8]) -> IResult<&[u8], (u64, (&str, &str), Option<&[u8]>)> {
+type ParsedNotification<'a> = (u64, (&'a str, &'a str), Option<&'a [u8]>);
+
+fn parse_notification(input: &[u8]) -> IResult<&[u8], ParsedNotification> {
     preceded(
         tag("1 "),
         cut(tuple((
@@ -216,7 +218,9 @@ fn parse_notification(input: &[u8]) -> IResult<&[u8], (u64, (&str, &str), Option
     )(input)
 }
 
-fn parse_request(input: &[u8]) -> IResult<&[u8], (u64, (&str, &str), Option<&[u8]>)> {
+type ParsedRequest<'a> = (u64, (&'a str, &'a str), Option<&'a [u8]>);
+
+fn parse_request(input: &[u8]) -> IResult<&[u8], ParsedRequest> {
     preceded(
         tag("2 "),
         cut(tuple((
@@ -227,7 +231,9 @@ fn parse_request(input: &[u8]) -> IResult<&[u8], (u64, (&str, &str), Option<&[u8
     )(input)
 }
 
-fn parse_response(input: &[u8]) -> IResult<&[u8], (u64, u64, Option<&[u8]>)> {
+type ParsedResponse<'a> = (u64, u64, Option<&'a [u8]>);
+
+fn parse_response(input: &[u8]) -> IResult<&[u8], ParsedResponse> {
     preceded(
         tag("3 "),
         cut(tuple((
@@ -238,7 +244,9 @@ fn parse_response(input: &[u8]) -> IResult<&[u8], (u64, u64, Option<&[u8]>)> {
     )(input)
 }
 
-fn parse_error(input: &[u8]) -> IResult<&[u8], (u64, u64, Result<ErrorKind, &[u8]>)> {
+type ParsedError<'a> = (u64, u64, Result<ErrorKind, &'a [u8]>);
+
+fn parse_error(input: &[u8]) -> IResult<&[u8], ParsedError> {
     preceded(
         tag("4 "),
         cut(tuple((
@@ -289,8 +297,8 @@ fn parse_service_method(input: &[u8]) -> IResult<&[u8], (&str, &str)> {
 
 fn parse_number(input: &[u8]) -> IResult<&[u8], u64> {
     map_res(
-        take_while_m_n(1, 16, |c| c >= b'0' && c <= b'9'),
-        |s| match u64::from_str_radix(std::str::from_utf8(s).unwrap(), 10) {
+        take_while_m_n(1, 16, |c| (b'0'..=b'9').contains(&c)),
+        |s| match std::str::from_utf8(s).unwrap().parse::<u64>() {
             Ok(value) if value > MAX_SAFE_INTEGER => Err(ParseError::MaxValueExceeded),
             Err(e) => Err(ParseError::ParseIntError(e)),
             Ok(value) => Ok(value),
