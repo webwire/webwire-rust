@@ -3,6 +3,7 @@
 ## 0.4.1-pre
 
 * Fix clippy warnings
+* Update `dashmap` dependency to version 5
 
 ## 0.4.0
 
