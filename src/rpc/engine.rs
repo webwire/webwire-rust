@@ -204,6 +204,7 @@ impl FrameHandler for Weak<Engine> {
 pub trait EngineListener {
     /// This function is called when the remote side wants to execute
     /// a function either as part of a notification or request.
+    #[must_use]
     fn call(
         &self,
         service: &str,

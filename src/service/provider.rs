@@ -10,6 +10,7 @@ use futures::future::{ready, BoxFuture};
 pub trait Provider<S: Sync + Send>: Sync + Send {
     //fn name(&self) -> &'static str;
     /// Call a method of this service
+    #[must_use]
     fn call(
         &self,
         session: &Arc<S>,
