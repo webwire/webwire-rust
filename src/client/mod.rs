@@ -74,10 +74,7 @@ impl Client {
         }
         let mut builder = ClientBuilder::from_url(url);
         if let Some(auth) = &self.auth {
-            builder.add_header(
-                hyper::header::AUTHORIZATION.to_string(),
-                auth.to_string(),
-            );
+            builder.add_header(hyper::header::AUTHORIZATION.to_string(), auth.to_string());
         }
         // FIXME add auth
         //builder.add_header()

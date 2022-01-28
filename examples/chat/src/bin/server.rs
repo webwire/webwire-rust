@@ -1,11 +1,11 @@
 use std::net::SocketAddr;
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
-use ::webwire::{Response, Router, Server, ConsumerError};
+use ::webwire::{ConsumerError, Response, Router, Server};
 
 use webwire_example_chat::api::chat;
 
@@ -50,7 +50,10 @@ impl webwire::SessionHandler<Session> for Sessions {
     async fn auth(&self, auth: Option<Auth>) -> Result<Session, AuthError> {
         match auth {
             None => Err(AuthError::Unauthorized),
-            Some(Auth::Basic { username, password: _ }) => Ok(Session { username }),
+            Some(Auth::Basic {
+                username,
+                password: _,
+            }) => Ok(Session { username }),
             Some(_) => Err(AuthError::Unsupported),
         }
     }

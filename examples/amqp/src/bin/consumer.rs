@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use api::chat::ServerConsumer;
 use async_trait::async_trait;
@@ -7,18 +7,16 @@ use async_trait::async_trait;
 use ::webwire::amqp::{AMQPConfig, AMQPConsumer};
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
-use ::webwire::{Response, Router, Server, ConsumerError};
+use ::webwire::{ConsumerError, Response, Router, Server};
 
 use api::chat;
 
-struct Session {
-
-}
+struct Session {}
 
 struct ChatService {
     //#[allow(dead_code)]
-    //session: Arc<Session>,
-    //server: Arc<Server<Session>>,
+//session: Arc<Session>,
+//server: Arc<Server<Session>>,
 }
 
 #[async_trait]
@@ -52,9 +50,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let consumer = AMQPConsumer::new(config);
     let server = ServerConsumer(&consumer);
-    let response = server.send(&api::chat::ClientMessage {
-        text: "hello world".to_owned(),
-    }).await?;
+    let response = server
+        .send(&api::chat::ClientMessage {
+            text: "hello world".to_owned(),
+        })
+        .await?;
     println!("{:?}", response);
     Ok(())
 }

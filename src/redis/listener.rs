@@ -4,7 +4,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use redis::{ConnectionInfo, RedisError};
 
-use crate::{Router, Provider};
+use crate::{Provider, Router};
 
 // TODO
 // - Add support for status signals (connected, disconnected)
@@ -33,7 +33,7 @@ impl RedisListener {
         })
     }
     /// Run the RedisListener
-    /// 
+    ///
     /// This function consumes the RedisListener and returns
     /// a future. Simply spawn this future via `tokio::spawn`.
     pub async fn run(self) {
@@ -45,7 +45,10 @@ impl RedisListener {
             for service_name in self.router.service_names() {
                 println!("Subscribing to: {}", service_name);
                 // FIXME add support for custom prefixes
-                pubsub.psubscribe(format!("{}:{}:*", self.prefix, service_name)).await.unwrap();
+                pubsub
+                    .psubscribe(format!("{}:{}:*", self.prefix, service_name))
+                    .await
+                    .unwrap();
             }
             let mut stream = pubsub.on_message();
             while let Some(msg) = stream.next().await {
@@ -61,7 +64,10 @@ impl RedisListener {
                 let payload = Bytes::copy_from_slice(msg.get_payload_bytes());
                 // FIXME proper error handling
                 // FIXME actually... this code should probably use the RPC engine
-                self.router.call(&fake_session, service, method, payload).await.unwrap();
+                self.router
+                    .call(&fake_session, service, method, payload)
+                    .await
+                    .unwrap();
             }
         });
     }

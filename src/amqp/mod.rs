@@ -6,7 +6,14 @@ use std::{collections::HashSet, sync::Arc};
 
 use bytes::Bytes;
 use futures::StreamExt;
-use lapin::{BasicProperties, Channel, options::{BasicAckOptions, BasicConsumeOptions, BasicPublishOptions, BasicRejectOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions}, types::FieldTable};
+use lapin::{
+    options::{
+        BasicAckOptions, BasicConsumeOptions, BasicPublishOptions, BasicRejectOptions,
+        ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
+    },
+    types::FieldTable,
+    BasicProperties, Channel,
+};
 
 use crate::{Consumer, ConsumerError, NamedProvider, Provider, ProviderError, Router};
 

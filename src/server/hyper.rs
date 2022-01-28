@@ -62,7 +62,9 @@ where
             return Ok(Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from("Unauthorized: Unsupported authentication method"))
+                .body(Body::from(
+                    "Unauthorized: Unsupported authentication method",
+                ))
                 .unwrap());
         }
         Err(AuthError::InternalServerError) => {

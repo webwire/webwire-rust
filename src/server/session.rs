@@ -103,11 +103,17 @@ impl Auth {
                 let b64 = base64::encode(credentials);
                 buf.write_all(b64.as_bytes()).unwrap();
             }
-            Self::Session { id, last_message_id } => {
+            Self::Session {
+                id,
+                last_message_id,
+            } => {
                 buf.write_all(id.as_bytes()).unwrap();
                 buf.write_u64::<BigEndian>(*last_message_id).unwrap();
             }
-            Self::Other { auth_type, credentials } => {
+            Self::Other {
+                auth_type,
+                credentials,
+            } => {
                 buf.write_all(auth_type).unwrap();
                 buf.write_all(b" ").unwrap();
                 buf.write_all(credentials).unwrap();

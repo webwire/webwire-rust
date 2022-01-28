@@ -1,5 +1,5 @@
 //! Redis support
-//! 
+//!
 //! This module implements support for Webwire RPC via
 //! the redis message queue.
 

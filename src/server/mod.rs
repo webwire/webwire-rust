@@ -6,9 +6,9 @@ use std::sync::Arc;
 use bytes::Bytes;
 use dashmap::DashMap;
 
-use crate::transport::Transport;
 use crate::service::consumer::{Consumer, Response};
 use crate::service::provider::Provider;
+use crate::transport::Transport;
 
 pub mod connection;
 pub mod hyper;
@@ -80,11 +80,7 @@ pub struct ConnectionIter<'a, S>
 where
     S: Sync + Send,
 {
-    iter: dashmap::iter::Iter<
-        'a,
-        usize,
-        Arc<Connection<S>>,
-    >,
+    iter: dashmap::iter::Iter<'a, usize, Arc<Connection<S>>>,
 }
 
 impl<S: Sync + Send> Iterator for ConnectionIter<'_, S> {

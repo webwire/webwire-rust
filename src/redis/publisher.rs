@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::{Consumer, service::consumer::Response};
+use crate::{service::consumer::Response, Consumer};
 
 use super::utils::RedisBytes;
 

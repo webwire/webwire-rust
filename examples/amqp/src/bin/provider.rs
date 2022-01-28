@@ -1,23 +1,21 @@
 use std::net::SocketAddr;
-use std::sync::{Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 
 use ::webwire::amqp::{AMQPConfig, AMQPProvider};
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
-use ::webwire::{Response, Router, Server, ConsumerError};
+use ::webwire::{ConsumerError, Response, Router, Server};
 
 use crate::api::chat;
 
-struct Session {
-
-}
+struct Session {}
 
 struct ChatService {
     //#[allow(dead_code)]
-    //session: Arc<Session>,
-    //server: Arc<Server<Session>>,
+//session: Arc<Session>,
+//server: Arc<Server<Session>>,
 }
 
 #[async_trait]
@@ -39,9 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let mut provider = AMQPProvider::new(config);
-    provider.service(api::chat::ServerProvider(
-        |_| ChatService {}
-    ));
+    provider.service(api::chat::ServerProvider(|_| ChatService {}));
     provider.run().await?;
     Ok(())
 }

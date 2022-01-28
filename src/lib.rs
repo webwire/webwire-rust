@@ -28,15 +28,15 @@
 
 #![warn(missing_docs)]
 
-pub mod client;
 pub mod amqp;
+pub mod client;
+#[cfg(feature = "redis")]
+pub mod redis;
 pub mod rpc;
 pub mod server;
 pub mod service;
 pub mod transport;
 pub mod utils;
-#[cfg(feature = "redis")]
-pub mod redis;
 
 pub use {
     server::{

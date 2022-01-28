@@ -7,9 +7,9 @@ use futures::future::{ready, BoxFuture};
 
 use super::Server;
 use crate::rpc::engine::{Engine, EngineListener};
-use crate::transport::Transport;
 use crate::service::consumer::{Consumer, Response};
 use crate::service::provider::ProviderError;
+use crate::transport::Transport;
 
 /// This is a client currently connected to the server.
 pub struct Connection<S: Sync + Send>
