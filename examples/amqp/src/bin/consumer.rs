@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use api::chat::ServerConsumer;
 use async_trait::async_trait;
 
 use ::webwire::amqp::{AMQPConfig, AMQPConsumer};
@@ -9,7 +8,7 @@ use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
 use ::webwire::{ConsumerError, Response, Router, Server};
 
-use api::chat;
+use webwire_amqp_example::api::chat;
 
 struct Session {}
 
@@ -49,9 +48,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let consumer = AMQPConsumer::new(config);
-    let server = ServerConsumer(&consumer);
+    let server = chat::ServerConsumer(&consumer);
     let response = server
-        .send(&api::chat::ClientMessage {
+        .send(&chat::ClientMessage {
             text: "hello world".to_owned(),
         })
         .await?;

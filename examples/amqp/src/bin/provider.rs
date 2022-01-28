@@ -8,9 +8,7 @@ use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
 use ::webwire::{ConsumerError, Response, Router, Server};
 
-use crate::api::chat;
-
-struct Session {}
+use webwire_amqp_example::api::chat;
 
 struct ChatService {
     //#[allow(dead_code)]
@@ -37,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let mut provider = AMQPProvider::new(config);
-    provider.service(api::chat::ServerProvider(|_| ChatService {}));
+    provider.service(chat::ServerProvider(|_| ChatService {}));
     provider.run().await?;
     Ok(())
 }
