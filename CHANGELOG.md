@@ -4,6 +4,8 @@
 
 * Fix clippy warnings
 * Update `dashmap` dependency to version 5
+* Add websocket client
+* Add redis support
 
 ## 0.4.0
 
