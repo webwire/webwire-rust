@@ -35,6 +35,8 @@ pub mod server;
 pub mod service;
 pub mod transport;
 pub mod utils;
+#[cfg(feature = "redis")]
+pub mod redis;
 
 pub use {
     server::{

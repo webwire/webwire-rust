@@ -89,6 +89,13 @@ impl<S: Sync + Send> Router<S> {
     {
         self.services.insert(P::NAME.to_owned(), Box::new(provider));
     }
+
+    /// Return a vector of all currently registered service names
+    // FIXME this method is somewhat silly and currently only
+    // used by the redis module in order to register all services.
+    pub fn service_names(&self) -> Vec<String> {
+        self.services.iter().map(|e| e.key().to_owned()).collect()
+    }
 }
 
 impl<S: Sync + Send> Provider<S> for Router<S> {
