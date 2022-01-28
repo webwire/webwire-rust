@@ -1,4 +1,6 @@
-use std::{sync::Arc, time::Duration};
+#![cfg(feature = "redis")]
+
+use std::sync::Arc;
 
 use bytes::Bytes;
 use redis::{Client, ConnectionInfo};
