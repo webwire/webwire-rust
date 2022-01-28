@@ -2,15 +2,17 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use api::chat;
 use webwire::{client::Client, server::session::Auth};
+
+use webwire_example_chat::api::chat;
 
 struct ChatClient {
     client: Arc<Client>,
 }
 
 #[async_trait]
-impl chat::Client<()> for ChatClient {
+impl chat::Client for ChatClient {
+    type Error = webwire::ProviderError;
     async fn on_message(&self, input: &chat::Message) -> Result<(), webwire::ProviderError> {
         println!("Message received: {:?}", input);
         if input.text == "!ping" {

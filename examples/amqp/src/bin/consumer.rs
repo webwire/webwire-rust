@@ -4,12 +4,12 @@ use std::sync::{Arc};
 use api::chat::ServerConsumer;
 use async_trait::async_trait;
 
-use ::api::chat;
-
 use ::webwire::amqp::{AMQPConfig, AMQPConsumer};
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
 use ::webwire::{Response, Router, Server, ConsumerError};
+
+use api::chat;
 
 struct Session {
 

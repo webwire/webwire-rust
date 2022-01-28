@@ -3,11 +3,11 @@ use std::sync::{Arc};
 
 use async_trait::async_trait;
 
-use ::api::chat;
-
 use ::webwire::server::hyper::MakeHyperService;
 use ::webwire::server::session::{Auth, AuthError};
 use ::webwire::{Response, Router, Server, ConsumerError};
+
+use webwire_example_chat::api::chat;
 
 struct ChatService {
     #[allow(dead_code)]
@@ -16,7 +16,8 @@ struct ChatService {
 }
 
 #[async_trait]
-impl chat::Server<Session> for ChatService {
+impl chat::Server for ChatService {
+    type Error = webwire::ProviderError;
     async fn send(&self, message: &chat::ClientMessage) -> Response<Result<(), chat::SendError>> {
         let client = chat::ClientConsumer(&*self.server);
         // FIXME Using matches!() to ensure the response resolves to

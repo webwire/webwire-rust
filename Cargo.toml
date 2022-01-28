@@ -40,3 +40,8 @@ version = "1.0"
 [dependencies.uuid]
 features = ["serde"]
 version = "0.8"
+
+[workspace]
+members = [
+    "examples/*"
+]

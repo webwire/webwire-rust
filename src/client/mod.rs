@@ -1,3 +1,7 @@
+//! This module is work in progress and mostly undocumented
+// FIXME remove this when the documentation is complete
+#![allow(missing_docs)]
+
 use std::error::Error;
 use std::fmt::Display;
 use std::sync::Arc;

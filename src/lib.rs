@@ -28,7 +28,7 @@
 
 #![warn(missing_docs)]
 
-//pub mod client;
+pub mod client;
 pub mod amqp;
 pub mod rpc;
 pub mod server;
