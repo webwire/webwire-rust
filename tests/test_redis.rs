@@ -1,14 +1,12 @@
 #![cfg(feature = "redis")]
 
-use std::sync::Arc;
-
 use bytes::Bytes;
 use redis::{Client, ConnectionInfo};
 use tokio::sync::{mpsc, Mutex};
 use webwire::{redis::RedisPublisher, Consumer, NamedProvider, Provider, Router};
 
 struct FakeService {
-    tx: Arc<Mutex<mpsc::Sender<()>>>,
+    tx: mpsc::Sender<()>,
 }
 
 impl<S: Sync + Send> Provider<S> for FakeService {
@@ -25,7 +23,7 @@ impl<S: Sync + Send> Provider<S> for FakeService {
         assert_eq!(data, "test_data");
         let tx = self.tx.clone();
         Box::pin(async move {
-            tx.lock().await.send(()).await.unwrap();
+            tx.send(()).await.unwrap();
             Ok(Bytes::new())
         })
     }
@@ -40,9 +38,7 @@ async fn test_redis() {
     let connection_info = "redis://127.0.0.1/".parse::<ConnectionInfo>().unwrap();
     let router = Router::new();
     let (tx, mut rx) = mpsc::channel(1);
-    router.service(FakeService {
-        tx: Arc::new(Mutex::new(tx)),
-    });
+    router.service(FakeService { tx });
     let listener = webwire::redis::RedisListener::new(
         connection_info.clone(),
         "test_webwire".to_string(),
