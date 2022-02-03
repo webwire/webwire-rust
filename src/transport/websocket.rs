@@ -59,7 +59,7 @@ async fn sender<T: AsyncWrite>(
     while let Some(message) = rx.recv().await {
         if let Err(e) = sink.send(message).await {
             // FIXME
-            println!("Transport error while sending: {}", e);
+            tracing::error!("Transport error while sending: {:?}", e);
             break;
         }
     }
@@ -100,7 +100,7 @@ async fn receiver<T: AsyncRead>(
                 Opcode::Pong => {}
             },
             Some(Err(e)) => {
-                println!("Transport error while receiving: {}", e);
+                tracing::error!("Transport error while receiving: {:?}", e);
                 break;
             }
             None => break,

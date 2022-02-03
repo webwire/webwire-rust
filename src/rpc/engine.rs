@@ -111,11 +111,13 @@ impl Engine {
                 ) {
                     (Ok(data), false) => engine.send_response(request.message_id, Ok(data)),
                     (Err(error), false) => engine.send_response(request.message_id, Err(error)),
-                    (Ok(_), true) => println!("Response for notification ready. Ignoring it."),
-                    (Err(_), true) => println!("Error for notification ready. Ignoring it."),
+                    (Ok(_), true) => {
+                        tracing::warn!("Response for notification ready. Ignoring it.")
+                    }
+                    (Err(_), true) => tracing::warn!("Error for notification ready. Ignoring it."),
                 }
             } else {
-                println!("Provider not set. Did you forget to call Engine::start?");
+                tracing::error!("Provider not set. Did you forget to call Engine::start?");
             }
         });
     }
@@ -167,7 +169,7 @@ impl Drop for Engine {
     fn drop(&mut self) {
         // Clear requests HashMap causing all channels to be closed.
         self.shutdown();
-        println!("Engine dropped.");
+        tracing::debug!("Engine dropped");
     }
 }
 
@@ -175,7 +177,6 @@ impl FrameHandler for Weak<Engine> {
     fn handle_frame(&self, data: Bytes) -> Result<(), FrameError> {
         let engine = self.upgrade().ok_or(FrameError::HandlerGone)?;
         let message = Message::parse(&data).ok_or(FrameError::ParseError)?;
-        println!("Handling frame: {:?}", message);
         match message {
             Message::Heartbeat(_heartbeat) => {
                 // XXX ignore heartbeats for now until reliable messaging is implemented
@@ -252,9 +253,9 @@ mod tests {
             remote.recv().await.unwrap(),
             Bytes::copy_from_slice(b"2 1 Test.get_answer")
         );
-        println!("Sending response...");
+        tracing::debug!("Sending response...");
         remote.send(Bytes::copy_from_slice(b"3 1 1 42"));
-        println!("Waiting for response...");
+        tracing::debug!("Waiting for response...");
         assert_eq!(response.await.unwrap(), Bytes::from("42"));
     }
 
@@ -292,7 +293,9 @@ mod tests {
                         Ok(()) => continue,
                         Err(FrameError::HandlerGone) => break,
                         Err(FrameError::ParseError) => {
-                            println!("An error occured while trying to parse a client frame");
+                            tracing::error!(
+                                "An error occured while trying to parse a client frame"
+                            );
                             break;
                         }
                     }

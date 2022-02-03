@@ -102,7 +102,7 @@ impl AMQPProvider {
                         .rsplitn(2, '.')
                         .collect::<Vec<_>>();
                     if parts.len() != 2 {
-                        println!("Unsupported routing_key: {}", delivery.routing_key);
+                        tracing::error!("Unsupported routing_key: {}", delivery.routing_key);
                         delivery.reject(BasicRejectOptions::default()).await?;
                         continue;
                     }
@@ -122,7 +122,7 @@ impl AMQPProvider {
                         }
                         Err(e) => {
                             // FIXME reject because of unknown method
-                            println!("{:?}", e);
+                            tracing::error!("Unknown method: {:?}", e);
                             delivery.reject(BasicRejectOptions::default()).await?;
                         }
                     }

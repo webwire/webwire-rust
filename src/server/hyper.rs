@@ -79,7 +79,7 @@ where
     Ok(match server_upgrade(request, on_client_fut).await {
         Ok(response) => response,
         Err(e) => {
-            println!("Error: {}", e);
+            tracing::error!("Internal server error: {:?}", e);
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .header(header::CONTENT_TYPE, "text/plain")

@@ -47,12 +47,10 @@ impl<S: Sync + Send + 'static> Server<S> {
     }
     /// This function is called to authenticate connections.
     pub async fn auth(&self, auth: Option<Auth>) -> Result<S, AuthError> {
-        println!("Auth!");
         self.session_handler.auth(auth).await
     }
     /// This function is called when a client connects.
     pub async fn connect<T: Transport + 'static>(self: &Arc<Self>, transport: T, session: S) {
-        println!("Connect!");
         let connection_id = self.last_connection_id.fetch_add(1, Ordering::Relaxed) + 1;
         let conn = Connection::new(connection_id, self, transport, session);
         self.connections.insert(connection_id, conn);

@@ -296,7 +296,6 @@ fn parse_string(input: &[u8]) -> IResult<&[u8], &str> {
 
 fn parse_service_method(input: &[u8]) -> IResult<&[u8], (&str, &str)> {
     map_res(parse_string, |name| {
-        println!("splitting name: {}", name);
         let parts = name.rsplitn(2, '.').collect::<Vec<_>>();
         if parts.len() == 2 {
             Ok((parts[1], parts[0]))
