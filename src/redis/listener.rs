@@ -22,12 +22,12 @@ pub struct RedisListener {
 impl RedisListener {
     /// Create a new RedisListener
     pub fn new(
-        connection_info: ConnectionInfo,
-        prefix: String,
+        connection_info: impl redis::IntoConnectionInfo,
+        prefix: &str,
         router: Router<()>,
     ) -> Result<Self, RedisError> {
         Ok(Self {
-            prefix,
+            prefix: prefix.to_owned(),
             client: redis::Client::open(connection_info)?,
             router,
         })
@@ -43,7 +43,6 @@ impl RedisListener {
             let conn = self.client.get_async_connection().await.unwrap();
             let mut pubsub = conn.into_pubsub();
             for service_name in self.router.service_names() {
-                println!("Subscribing to: {}", service_name);
                 // FIXME add support for custom prefixes
                 pubsub
                     .psubscribe(format!("{}:{}:*", self.prefix, service_name))
@@ -52,7 +51,6 @@ impl RedisListener {
             }
             let mut stream = pubsub.on_message();
             while let Some(msg) = stream.next().await {
-                println!("<<< {:?}", msg);
                 let mut tokenizer = msg.get_channel_name().rsplit(':');
                 // FIXME add propery error handling
                 let method = tokenizer.next().unwrap();
