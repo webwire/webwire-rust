@@ -1,22 +1,19 @@
-use std::sync::Arc;
-
-use tokio::sync::Mutex;
-
 use crate::{service::consumer::Response, Consumer};
 
 use super::utils::RedisBytes;
 
 /// Publisher for broadcasts
+#[derive(Clone)]
 pub struct RedisPublisher {
-    conn: Arc<Mutex<redis::aio::Connection>>,
+    pool: deadpool_redis::Pool,
     prefix: String,
 }
 
 impl RedisPublisher {
     /// Create new RedisPublisher
-    pub fn new(conn: redis::aio::Connection, prefix: &str) -> Self {
+    pub fn new(pool: deadpool_redis::Pool, prefix: &str) -> Self {
         Self {
-            conn: Arc::new(Mutex::new(conn)),
+            pool,
             prefix: prefix.to_owned(),
         }
     }
@@ -28,14 +25,14 @@ impl Consumer for RedisPublisher {
         Response::notification()
     }
     fn notify(&self, service: &str, method: &str, data: bytes::Bytes) {
+        let pool = self.pool.clone();
         let topic = format!("{}:{}:{}", self.prefix, service, method);
-        let conn = self.conn.clone();
         tokio::spawn(async move {
-            let mut conn = conn.lock().await;
+            let mut conn = pool.get().await.unwrap();
             redis::cmd("PUBLISH")
                 .arg(topic)
                 .arg(RedisBytes(data))
-                .query_async::<_, ()>(&mut *conn)
+                .query_async::<_, ()>(&mut conn)
                 .await
                 .unwrap();
         });
