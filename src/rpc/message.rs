@@ -42,6 +42,17 @@ pub enum Message {
     Disconnect,
 }
 
+impl Message {
+    pub fn type_display(&self) -> &'static str {
+        match self {
+            Self::Heartbeat(_) => "Heartbeat",
+            Self::Request(_) => "Request",
+            Self::Response(_) => "Response",
+            Self::Disconnect => "Disconnect",
+        }
+    }
+}
+
 /// A parsed heartbeat message
 #[derive(Debug, Eq, PartialEq)]
 pub struct Heartbeat {
