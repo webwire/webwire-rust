@@ -3,14 +3,14 @@ use serde::Deserialize;
 use tokio_amqp::LapinTokioExt;
 
 #[derive(Clone, Debug, Deserialize)]
-pub enum AMQPScheme {
-    AMQP,
-    AMQPS,
+pub enum AmqpScheme {
+    Amqp,
+    Amqps,
 }
 
-impl Default for AMQPScheme {
+impl Default for AmqpScheme {
     fn default() -> Self {
-        Self::AMQP
+        Self::Amqp
     }
 }
 
@@ -20,7 +20,7 @@ fn default_vhost() -> String {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct AMQPConfig {
-    pub scheme: AMQPScheme,
+    pub scheme: AmqpScheme,
     pub host: String,
     pub port: Option<u16>,
     #[serde(default = "default_vhost")]
@@ -34,7 +34,7 @@ pub struct AMQPConfig {
 impl Default for AMQPConfig {
     fn default() -> Self {
         Self {
-            scheme: AMQPScheme::default(),
+            scheme: AmqpScheme::default(),
             host: "127.0.0.1".to_owned(),
             port: None,
             vhost: "/".to_owned(),
@@ -53,8 +53,8 @@ impl AMQPConfig {
     pub async fn connect(&self) -> Result<Connection, lapin::Error> {
         let connection_properties = lapin::ConnectionProperties::default().with_tokio();
         let scheme = match &self.scheme {
-            AMQP => lapin::uri::AMQPScheme::AMQP,
-            AMQPS => lapin::uri::AMQPScheme::AMQPS,
+            AmqpScheme::Amqp => lapin::uri::AMQPScheme::AMQP,
+            AmqpScheme::Amqps => lapin::uri::AMQPScheme::AMQPS,
         };
         let port = self.port.unwrap_or_else(|| scheme.default_port());
         let uri = lapin::uri::AMQPUri {

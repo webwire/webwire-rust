@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use futures::StreamExt;
-use redis::{ConnectionInfo, RedisError};
+use redis::RedisError;
 
 use crate::{Provider, Router};
 

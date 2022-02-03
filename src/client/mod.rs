@@ -54,7 +54,7 @@ where
     provider: Arc<dyn Provider<()>>,
     auth: Option<Auth>,
     async_client: Option<AsyncClient>,
-    join_handle: Option<tokio::task::JoinHandle<()>>,
+    //join_handle: Option<tokio::task::JoinHandle<()>>,
     engine: Mutex<Option<Arc<Engine>>>,
 }
 
@@ -64,7 +64,7 @@ impl Client {
             provider,
             auth,
             async_client: None,
-            join_handle: None,
+            //join_handle: None,
             engine: Mutex::new(None),
         }
     }
@@ -89,7 +89,7 @@ impl Client {
             }
         }));
         */
-        let mut engine = Arc::new(Engine::new(ClientTransport::new(client)));
+        let engine = Arc::new(Engine::new(ClientTransport::new(client)));
         let engine_listener: Arc<dyn EngineListener + Sync + Send> = self.clone();
         engine.start(Arc::downgrade(&engine_listener));
 

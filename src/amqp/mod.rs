@@ -15,7 +15,7 @@ use lapin::{
     BasicProperties, Channel,
 };
 
-use crate::{Consumer, ConsumerError, NamedProvider, Provider, ProviderError, Router};
+use crate::{Consumer, ConsumerError, NamedProvider, Provider, Router};
 
 mod config;
 pub use config::AMQPConfig;
@@ -70,7 +70,7 @@ impl AMQPProvider {
         let connection = self.config.connect().await?;
         let channel = connection.create_channel().await?;
 
-        declare(&channel, &self.config);
+        declare(&channel, &self.config).await?;
 
         for service_name in self.service_names.iter() {
             channel
@@ -95,7 +95,7 @@ impl AMQPProvider {
 
         while let Some(delivery) = consumer.next().await {
             match delivery {
-                Ok((channel, delivery)) => {
+                Ok((_channel, delivery)) => {
                     let parts = delivery
                         .routing_key
                         .as_str()
@@ -116,7 +116,7 @@ impl AMQPProvider {
                         .call(&Arc::new(()), service_name, method_name, data)
                         .await;
                     match response {
-                        Ok(data) => {
+                        Ok(_data) => {
                             // FIXME what to do with this?
                             delivery.ack(BasicAckOptions::default()).await?;
                         }
@@ -172,7 +172,7 @@ impl Consumer for AMQPConsumer {
             match result {
                 Ok(confirm) => {
                     match confirm.await {
-                        Ok(confirmation) => {
+                        Ok(_confirmation) => {
                             // FIXME this is wrong
                             let response = Bytes::new();
                             tx.send(Ok(response))
@@ -185,7 +185,8 @@ impl Consumer for AMQPConsumer {
         });
         crate::service::consumer::Response::new(rx)
     }
-    fn notify(&self, service: &str, method: &str, data: bytes::Bytes) {
+    fn notify(&self, _service: &str, _method: &str, _data: bytes::Bytes) {
+        // FIXME
         todo!()
     }
 }

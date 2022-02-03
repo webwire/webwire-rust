@@ -3,8 +3,7 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use redis::{Client, ConnectionInfo};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use webwire::{redis::RedisPublisher, Consumer, NamedProvider, Provider, Router};
 
 struct FakeService {

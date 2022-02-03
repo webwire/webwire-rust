@@ -43,6 +43,9 @@ pub enum Message {
 }
 
 impl Message {
+    /// Get a human readable name of the message type. This is mainly
+    /// useful for logging error messages when receiving unexpected
+    /// messages.
     pub fn type_display(&self) -> &'static str {
         match self {
             Self::Heartbeat(_) => "Heartbeat",
