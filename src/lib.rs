@@ -28,7 +28,6 @@
 
 #![warn(missing_docs)]
 
-pub mod amqp;
 pub mod client;
 #[cfg(feature = "redis")]
 pub mod redis;
