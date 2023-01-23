@@ -7,7 +7,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::Stdin;
 use tokio::io::Stdout;
-use webwire::{client::Client, server::session::Auth};
+use webwire::{client::Client, server::auth::Auth};
 use webwire_example_chat::api::chat;
 
 struct ChatClient {}

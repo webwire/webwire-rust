@@ -39,7 +39,7 @@ pub mod utils;
 
 pub use {
     server::{
-        session::{DefaultSessionHandler, SessionHandler},
+        auth::{AuthHandler, DefaultSessionHandler},
         Server,
     },
     service::{Consumer, ConsumerError, NamedProvider, Provider, ProviderError, Response, Router},

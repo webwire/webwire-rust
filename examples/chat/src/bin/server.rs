@@ -6,8 +6,8 @@ use async_trait::async_trait;
 use dotenv::dotenv;
 use serde::Deserialize;
 use webwire::redis::RedisPublisher;
+use webwire::server::auth::{Auth, AuthError};
 use webwire::server::hyper::MakeHyperService;
-use webwire::server::session::{Auth, AuthError};
 use webwire::{ConsumerError, Response, Router};
 
 use webwire_example_chat::api::chat;
@@ -48,7 +48,7 @@ impl Sessions {
 }
 
 #[async_trait]
-impl webwire::SessionHandler<Session> for Sessions {
+impl webwire::AuthHandler<Session> for Sessions {
     async fn auth(&self, auth: Option<Auth>) -> Result<Session, AuthError> {
         match auth {
             None => Err(AuthError::Unauthorized),

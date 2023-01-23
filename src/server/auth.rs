@@ -1,4 +1,4 @@
-//! Authentication and sessions
+//! Authentication
 
 use std::fmt;
 use std::io::Write;
@@ -129,9 +129,9 @@ impl fmt::Display for Auth {
     }
 }
 
-/// Handler for inbound sessions
+/// Authorization handler for inbound connections
 #[async_trait]
-pub trait SessionHandler<S: Send + Sync> {
+pub trait AuthHandler<S: Send + Sync> {
     /// Authorize the incoming request returning a session on
     /// success or an `AuthError` if the remote side could not be
     /// authenticated.
@@ -199,7 +199,7 @@ impl<S: Default + Send + Sync> Default for DefaultSessionHandler<S> {
 }
 
 #[async_trait]
-impl<S: Default + Send + Sync> SessionHandler<S> for DefaultSessionHandler<S> {
+impl<S: Default + Send + Sync> AuthHandler<S> for DefaultSessionHandler<S> {
     async fn auth(&self, _auth: Option<Auth>) -> Result<S, AuthError> {
         Ok(S::default())
     }

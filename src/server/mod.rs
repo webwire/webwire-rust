@@ -11,24 +11,24 @@ use crate::service::provider::Provider;
 use crate::transport::Transport;
 
 pub mod connection;
-pub mod hyper;
-pub mod session;
+//pub mod hyper; // FIXME remove this module
+pub mod auth;
 
+use auth::{Auth, AuthError, AuthHandler};
 use connection::Connection;
-use session::{Auth, AuthError, SessionHandler};
 
 /// The webwire server which is the
 pub struct Server<S: Sync + Send> {
     last_connection_id: AtomicUsize,
     connections: DashMap<usize, Arc<Connection<S>>>,
     provider: Arc<dyn Provider<S>>,
-    session_handler: Box<dyn SessionHandler<S> + Sync + Send>,
+    session_handler: Box<dyn AuthHandler<S> + Sync + Send>,
 }
 
 impl<S: Sync + Send + 'static> Server<S> {
     /// Create a new server object using the given session handler
     /// and provider registry.
-    pub fn new<H: SessionHandler<S> + Sync + Send + 'static>(
+    pub fn new<H: AuthHandler<S> + Sync + Send + 'static>(
         session_handler: H,
         provider: Arc<dyn Provider<S>>,
     ) -> Self {
