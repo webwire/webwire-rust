@@ -28,7 +28,6 @@
 
 #![warn(missing_docs)]
 
-pub mod client;
 #[cfg(feature = "redis")]
 pub mod redis;
 pub mod rpc;
