@@ -13,7 +13,7 @@ use tokio::sync::oneshot;
 /// to wait for the result of a method. It does however not need to be
 /// polled to make progress and shouldn't be polled if it was created as
 /// part of a notification to multiple recipients (broadcast).
-#[must_use = "The response should either be polled or `assert_broadcast` should be called on it (consuming it)"]
+#[must_use = "The response should either be polled or `assert_notification` should be called on it (consuming it)"]
 pub struct Response {
     rx: Option<oneshot::Receiver<Result<Bytes, ConsumerError>>>,
 }
