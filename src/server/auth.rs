@@ -4,6 +4,7 @@ use std::fmt;
 use std::io::Write;
 
 use async_trait::async_trait;
+use base64::prelude::{Engine as _, BASE64_STANDARD as b64_engine};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use uuid::Uuid;
 
@@ -57,7 +58,7 @@ impl Auth {
     }
     /// Create Auth::Basic object from base64 encoded credentials
     pub fn basic_from_base64(credentials: &[u8]) -> Option<Auth> {
-        let s = base64::decode(credentials).ok()?;
+        let s = b64_engine.decode(credentials).ok()?;
         let s = String::from_utf8(s).ok()?;
         let mut it = s.splitn(2, ':');
         let username = it.next()?;
@@ -69,12 +70,12 @@ impl Auth {
     }
     /// Create Auth::Bearer object from credentials
     pub fn bearer_from_base64(credentials: &[u8]) -> Option<Auth> {
-        let s = base64::decode(credentials).ok()?;
+        let s = b64_engine.decode(credentials).ok()?;
         Some(Auth::Bearer(s))
     }
     /// Create Auth::Session object from credentials
     pub fn session_from_base64(credentials: &[u8]) -> Option<Auth> {
-        let s = base64::decode(credentials).ok()?;
+        let s = b64_engine.decode(credentials).ok()?;
         if s.len() != 24 {
             return None;
         }
@@ -92,7 +93,7 @@ impl Auth {
         match self {
             Self::Basic { username, password } => {
                 buf.write_all(b"Basic ").unwrap();
-                let b64 = base64::encode(format!("{}:{}", username, password));
+                let b64 = b64_engine.encode(format!("{}:{}", username, password));
                 buf.write_all(b64.as_bytes()).unwrap();
             }
             Self::Key(credentials) => {
@@ -100,7 +101,7 @@ impl Auth {
                 buf.write_all(credentials.as_bytes()).unwrap();
             }
             Self::Bearer(credentials) => {
-                let b64 = base64::encode(credentials);
+                let b64 = b64_engine.encode(credentials);
                 buf.write_all(b64.as_bytes()).unwrap();
             }
             Self::Session {

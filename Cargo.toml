@@ -10,40 +10,31 @@ readme = "README.md"
 edition = "2021"
 
 [dependencies]
+axum = { version = "0.6", features = ["ws"] }
+axum-macros = "0.3"
 async-trait = "0.1"
-base64 = "0.13"
+base64 = "0.21"
 byteorder = "1"
 bytes = "1"
 dashmap = "5"
 futures = "0.3"
-hyper = { version = "0.14", features = ["http1", "http2", "server", "stream", "runtime"] }
-hyper-websocket-lite = "0.5"
-lapin = { version = "1" }
+lapin = "2.1.1"
 log = "0.4"
 nom = "7"
-redis = { version = "0.21.5", features = ["tokio-comp"], optional = true }
-deadpool-redis = "0.10" # FIXME make this optional
-tokio-amqp = { version = "1" }
+redis = { version = "0.22", features = ["tokio-comp"], optional = true }
+deadpool-redis = "0.11"
+tokio = { version = "1.0", features = ["full"] }
+tokio-amqp = "2.0.0"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
-validator = "0.14"
-websocket-codec = "0.5"
-websocket-lite = "0.5"
+uuid = { version = "1", features = ["serde"] }
+validator = "0.16"
 tracing = "0.1.29"
-
-[dependencies.serde]
-features = ["derive"]
-version = "1"
-
-[dependencies.tokio]
-features = ["full"]
-version = "1.0"
-
-[dependencies.uuid]
-features = ["serde"]
-version = "0.8"
+hyper = "0.14.19"
+tower-service = "0.3.2"
 
 [workspace]
 members = [
-    "examples/*"
+    #"examples/*"
 ]
